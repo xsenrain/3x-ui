@@ -52,6 +52,9 @@
 "secretToken" = "安全密钥"
 "remained" = "剩余"
 "security" = "安全"
+"secAlertTitle" = "安全警报"
+"secAlertSsl" = "此连接不安全；在激活 TLS 进行数据保护之前，请勿输入敏感信息"
+"secAlertConf" = "某些配置已被确定为容易受到攻击，促使立即采取行动以加强安全协议并防范潜在的安全漏洞。"
 
 [menu]
 "dashboard" = "系统状态"
@@ -302,6 +305,8 @@
 "subShowInfoDesc" = "在配置名称后显示剩余流量和日期"
 "subURI" = "反向代理 URI"
 "subURIDesc" = "更改订阅 URL 的基本 URI 以在代理后面使用"
+"fragment" = "碎片"
+"fragmentDesc" = "启用 TLS hello 数据包分段"
 
 [pages.xray]
 "title" = "Xray 设置"
@@ -377,14 +382,20 @@
 "GoogleIPv4Desc" = "添加谷歌连接IPv4的路由"
 "NetflixIPv4" = "为 Netflix 使用 IPv4"
 "NetflixIPv4Desc" = "添加Netflix连接IPv4的路由"
-"GoogleWARP" = "将谷歌路由到 WARP"
-"GoogleWARPDesc" = "为谷歌添加路由到WARP"
-"OpenAIWARP" = "将 OpenAI (ChatGPT) 路由到 WARP"
-"OpenAIWARPDesc" = "将OpenAI（ChatGPT）路由添加到WARP"
-"NetflixWARP" = "将 Netflix 路由到 WARP"
-"NetflixWARPDesc" = "为Netflix添加路由到WARP"
-"SpotifyWARP" = "将 Spotify 路由到 WARP"
-"SpotifyWARPDesc" = "为Spotify添加路由到WARP"
+"GoogleWARP" = "Google"
+"GoogleWARPDesc" = "通过 WARP 将流量路由到 Google。"
+"OpenAIWARP" = "OpenAI (ChatGPT)"
+"OpenAIWARPDesc" = "通过 WARP 将流量路由到 OpenAI (ChatGPT)。"
+"NetflixWARP" = "Netflix"
+"NetflixWARPDesc" = "通过 WARP 将流量路由到 Netflix。"
+"MetaWARP"="Meta"
+"MetaWARPDesc" = "通过 WARP 将流量路由到 Meta（Instagram、Facebook、WhatsApp、Threads...）"
+"AppleWARP" = "Apple"
+"AppleWARPDesc" = "通过 WARP 将流量路由到 Apple。"
+"RedditWARP" = "Reddit"
+"RedditWARPDesc" = "通过 WARP 将流量路由到 Reddit。"
+"SpotifyWARP" = "Spotify"
+"SpotifyWARPDesc" = "通过 WARP 将流量路由到 Spotify。"
 "IRWARP" = "将伊朗域名路由到 WARP"
 "IRWARPDesc" = "将伊朗域的路由添加到 WARP。 重启面板生效"
 "Inbounds" = "入站"
@@ -457,6 +468,12 @@
 "add" = "添加服务器"
 "edit" = "编辑服务器"
 "domains" = "域"
+
+[pages.xray.fakedns]
+"add" = "添加假 DNS"
+"edit" = "编辑假 DNS"
+"ipPool" = "IP 池子网"
+"poolSize" = "池大小"
 
 [pages.settings.security]
 "admin" = "管理员"

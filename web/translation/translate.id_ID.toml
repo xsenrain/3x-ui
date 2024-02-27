@@ -52,6 +52,9 @@
 "secretToken" = "Token Rahasia"
 "remained" = "Tersisa"
 "security" = "Keamanan"
+"secAlertTitle" = "Peringatan keamanan"
+"secAlertSsl" = "Koneksi ini tidak aman. Harap hindari memasukkan informasi sensitif sampai TLS diaktifkan untuk perlindungan data."
+"secAlertConf" = "Konfigurasi tertentu telah diidentifikasi rentan terhadap serangan, sehingga mendorong tindakan segera untuk memperkuat protokol keamanan dan melindungi dari potensi pelanggaran keamanan."
 
 [menu]
 "dashboard" = "Ikhtisar"
@@ -302,6 +305,8 @@
 "subShowInfoDesc" = "Sisa traffic dan tanggal akan ditampilkan di aplikasi klien."
 "subURI" = "URI Proxy Terbalik"
 "subURIDesc" = "URI path URL langganan untuk penggunaan di belakang proxy."
+"fragment" = "Fragmentasi"
+"fragmentDesc" = "Aktifkan fragmentasi untuk paket hello TLS"
 
 [pages.xray]
 "title" = "Konfigurasi Xray"
@@ -383,6 +388,12 @@
 "OpenAIWARPDesc" = "Rute lalu lintas ke ChatGPT melalui WARP."
 "NetflixWARP" = "Netflix"
 "NetflixWARPDesc" = "Rute lalu lintas ke Netflix melalui WARP."
+"MetaWARP" = "Meta"
+"MetaWARPDesc" = "Merutekan lalu lintas ke Meta (Instagram, Facebook, WhatsApp, Threads,...) melalui WARP."
+"AppleWARP" = "Apple"
+"AppleWARPDesc" = "Merutekan lalu lintas ke Apple melalui WARP."
+"RedditWARP" = "Reddit"
+"RedditWARPDesc" = "Merutekan lalu lintas ke Reddit melalui WARP."
 "SpotifyWARP" = "Spotify"
 "SpotifyWARPDesc" = "Rute lalu lintas ke Spotify melalui WARP."
 "IRWARP" = "Domain Iran"
@@ -457,6 +468,12 @@
 "add" = "Tambahkan Server"
 "edit" = "Sunting Server"
 "domains" = "Domains"
+
+[pages.xray.fakedns]
+"add" = "Tambahkan DNS Palsu"
+"edit" = "Edit DNS Palsu"
+"ipPool" = "Subnet Kumpulan IP"
+"poolSize" = "Ukuran Kolam"
 
 [pages.settings.security]
 "admin" = "Admin"

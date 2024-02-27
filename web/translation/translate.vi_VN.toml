@@ -52,6 +52,9 @@
 "secretToken" = "Mã bí mật"
 "remained" = "Còn lại"
 "security" = "Bảo vệ"
+"secAlertTitle" = "Cảnh báo an ninh-Tiếng Việt by Ohoang7"
+"secAlertSsl" = "Kết nối này không an toàn; Vui lòng không nhập thông tin nhạy cảm cho đến khi TLS được kích hoạt để bảo vệ dữ liệu của Bạn"
+"secAlertConf" = "Một số cấu hình nhất định đã được xác định là dễ bị tấn công, thúc đẩy hành động ngay lập tức để củng cố các giao thức bảo mật và bảo vệ chống lại các vi phạm bảo mật tiềm ẩn."
 
 [menu]
 "dashboard" = "Trạng thái hệ thống"
@@ -302,6 +305,8 @@
 "subShowInfoDesc" = "Hiển thị lưu lượng truy cập còn lại và ngày sau tên cấu hình"
 "subURI" = "URI proxy trung gian"
 "subURIDesc" = "Thay đổi URI cơ sở của URL gói đăng ký để sử dụng cho proxy trung gian"
+"fragment" = "Sự phân mảnh"
+"fragmentDesc" = "Kích hoạt phân mảnh cho gói TLS hello"
 
 [pages.xray]
 "title" = "Cài đặt Xray"
@@ -377,14 +382,20 @@
 "GoogleIPv4Desc" = "Thêm định tuyến cho Google để kết nối qua IPv4."
 "NetflixIPv4" = "Sử dụng IPv4 cho Netflix"
 "NetflixIPv4Desc" = "Thêm định tuyến cho Netflix để kết nối qua IPv4."
-"GoogleWARP" = "Định tuyến Google qua WARP."
-"GoogleWARPDesc" = "Thêm định tuyến cho Google qua WARP."
-"OpenAIWARP" = "Định tuyến OpenAI (ChatGPT) qua WARP."
-"OpenAIWARPDesc" = "Thêm định tuyến cho OpenAI (ChatGPT) qua WARP."
-"NetflixWARP" = "Định tuyến Netflix qua WARP."
-"NetflixWARPDesc" = "Thêm định tuyến cho Netflix qua WARP."
-"SpotifyWARP" = "Định tuyến Spotify qua WARP."
-"SpotifyWARPDesc" = "Thêm định tuyến cho Spotify qua WARP."
+"GoogleWARP" = "Google"
+"GoogleWARPDesc" = "Định tuyến lưu lượng truy cập tới Google thông qua WARP."
+"OpenAIWARP" = "OpenAI (ChatGPT)"
+"OpenAIWARPDesc" = "Định tuyến lưu lượng truy cập tới OpenAI (ChatGPT) thông qua WARP."
+"NetflixWARP" = "Netflix"
+"NetflixWARPDesc" = "Định tuyến lưu lượng truy cập tới Netflix thông qua WARP."
+"MetaWARP" = "Meta"
+"MetaWARPDesc" = "Định tuyến lưu lượng truy cập tới Meta (Instagram, Facebook, WhatsApp, Threads,...) thông qua WARP."
+"AppleWARP" = "Apple"
+"AppleWARPDesc" = "Định tuyến lưu lượng truy cập tới Apple thông qua WARP."
+"RedditWARP" = "Reddit"
+"RedditWARPDesc" = "Định tuyến lưu lượng truy cập tới Reddit thông qua WARP."
+"SpotifyWARP" = "Spotify"
+"SpotifyWARPDesc" = "Định tuyến lưu lượng truy cập tới Spotify thông qua WARP."
 "IRWARP" = "Định tuyến tên miền của Iran qua WARP."
 "IRWARPDesc" = "Thêm định tuyến cho các tên miền của Iran qua WARP."
 "Inbounds" = "Đầu vào"
@@ -457,6 +468,12 @@
 "add" = "Thêm máy chủ"
 "edit" = "Chỉnh sửa máy chủ"
 "domains" = "Tên miền"
+
+[pages.xray.fakedns]
+"add" = "Thêm DNS giả"
+"edit" = "Chỉnh sửa DNS giả"
+"ipPool" = "Mạng con nhóm IP"
+"poolSize" = "Kích thước bể bơi"
 
 [pages.settings.security]
 "admin" = "Quản trị viên"
