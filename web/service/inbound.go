@@ -1069,10 +1069,7 @@ func (s *InboundService) AddClientStat(tx *gorm.DB, inboundId int, client *model
 	clientTraffic.Reset = client.Reset
 	result := tx.Create(&clientTraffic)
 	err := result.Error
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (s *InboundService) UpdateClientStat(tx *gorm.DB, email string, client *model.Client) error {
@@ -1085,12 +1082,8 @@ func (s *InboundService) UpdateClientStat(tx *gorm.DB, email string, client *mod
 			"expiry_time": client.ExpiryTime,
 			"reset":       client.Reset,
 		})
-
 	err := result.Error
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (s *InboundService) UpdateClientIPs(tx *gorm.DB, oldEmail string, newEmail string) error {
@@ -1159,20 +1152,20 @@ func (s *InboundService) GetClientByEmail(clientEmail string) (*xray.ClientTraff
 	return nil, nil, common.NewError("Client Not Found In Inbound For Email:", clientEmail)
 }
 
-func (s *InboundService) SetClientTelegramUserID(trafficId int, tgId string) error {
+func (s *InboundService) SetClientTelegramUserID(trafficId int, tgId string) (bool, error) {
 	traffic, inbound, err := s.GetClientInboundByTrafficID(trafficId)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if inbound == nil {
-		return common.NewError("Inbound Not Found For Traffic ID:", trafficId)
+		return false, common.NewError("Inbound Not Found For Traffic ID:", trafficId)
 	}
 
 	clientEmail := traffic.Email
 
 	oldClients, err := s.GetClients(inbound)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	clientId := ""
@@ -1191,13 +1184,13 @@ func (s *InboundService) SetClientTelegramUserID(trafficId int, tgId string) err
 	}
 
 	if len(clientId) == 0 {
-		return common.NewError("Client Not Found For Email:", clientEmail)
+		return false, common.NewError("Client Not Found For Email:", clientEmail)
 	}
 
 	var settings map[string]interface{}
 	err = json.Unmarshal([]byte(inbound.Settings), &settings)
 	if err != nil {
-		return err
+		return false, err
 	}
 	clients := settings["clients"].([]interface{})
 	var newClients []interface{}
@@ -1211,14 +1204,11 @@ func (s *InboundService) SetClientTelegramUserID(trafficId int, tgId string) err
 	settings["clients"] = newClients
 	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return err
+		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	_, err = s.UpdateInboundClient(inbound, clientId)
-	if err != nil {
-		return err
-	}
-	return nil
+	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	return needRestart, err
 }
 
 func (s *InboundService) checkIsEnabledByEmail(clientEmail string) (bool, error) {
@@ -1247,18 +1237,18 @@ func (s *InboundService) checkIsEnabledByEmail(clientEmail string) (bool, error)
 	return isEnable, err
 }
 
-func (s *InboundService) ToggleClientEnableByEmail(clientEmail string) (bool, error) {
+func (s *InboundService) ToggleClientEnableByEmail(clientEmail string) (bool, bool, error) {
 	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if inbound == nil {
-		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
+		return false, false, common.NewError("Inbound Not Found For Email:", clientEmail)
 	}
 
 	oldClients, err := s.GetClients(inbound)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 
 	clientId := ""
@@ -1279,13 +1269,13 @@ func (s *InboundService) ToggleClientEnableByEmail(clientEmail string) (bool, er
 	}
 
 	if len(clientId) == 0 {
-		return false, common.NewError("Client Not Found For Email:", clientEmail)
+		return false, false, common.NewError("Client Not Found For Email:", clientEmail)
 	}
 
 	var settings map[string]interface{}
 	err = json.Unmarshal([]byte(inbound.Settings), &settings)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	clients := settings["clients"].([]interface{})
 	var newClients []interface{}
@@ -1299,30 +1289,30 @@ func (s *InboundService) ToggleClientEnableByEmail(clientEmail string) (bool, er
 	settings["clients"] = newClients
 	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	inbound.Settings = string(modifiedSettings)
 
-	_, err = s.UpdateInboundClient(inbound, clientId)
+	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	if err != nil {
+		return false, needRestart, err
+	}
+
+	return !clientOldEnabled, needRestart, nil
+}
+
+func (s *InboundService) ResetClientIpLimitByEmail(clientEmail string, count int) (bool, error) {
+	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
 	if err != nil {
 		return false, err
 	}
-
-	return !clientOldEnabled, nil
-}
-
-func (s *InboundService) ResetClientIpLimitByEmail(clientEmail string, count int) error {
-	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
-	if err != nil {
-		return err
-	}
 	if inbound == nil {
-		return common.NewError("Inbound Not Found For Email:", clientEmail)
+		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
 	}
 
 	oldClients, err := s.GetClients(inbound)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	clientId := ""
@@ -1341,13 +1331,13 @@ func (s *InboundService) ResetClientIpLimitByEmail(clientEmail string, count int
 	}
 
 	if len(clientId) == 0 {
-		return common.NewError("Client Not Found For Email:", clientEmail)
+		return false, common.NewError("Client Not Found For Email:", clientEmail)
 	}
 
 	var settings map[string]interface{}
 	err = json.Unmarshal([]byte(inbound.Settings), &settings)
 	if err != nil {
-		return err
+		return false, err
 	}
 	clients := settings["clients"].([]interface{})
 	var newClients []interface{}
@@ -1361,28 +1351,25 @@ func (s *InboundService) ResetClientIpLimitByEmail(clientEmail string, count int
 	settings["clients"] = newClients
 	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return err
+		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	_, err = s.UpdateInboundClient(inbound, clientId)
-	if err != nil {
-		return err
-	}
-	return nil
+	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	return needRestart, err
 }
 
-func (s *InboundService) ResetClientExpiryTimeByEmail(clientEmail string, expiry_time int64) error {
+func (s *InboundService) ResetClientExpiryTimeByEmail(clientEmail string, expiry_time int64) (bool, error) {
 	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if inbound == nil {
-		return common.NewError("Inbound Not Found For Email:", clientEmail)
+		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
 	}
 
 	oldClients, err := s.GetClients(inbound)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	clientId := ""
@@ -1401,13 +1388,13 @@ func (s *InboundService) ResetClientExpiryTimeByEmail(clientEmail string, expiry
 	}
 
 	if len(clientId) == 0 {
-		return common.NewError("Client Not Found For Email:", clientEmail)
+		return false, common.NewError("Client Not Found For Email:", clientEmail)
 	}
 
 	var settings map[string]interface{}
 	err = json.Unmarshal([]byte(inbound.Settings), &settings)
 	if err != nil {
-		return err
+		return false, err
 	}
 	clients := settings["clients"].([]interface{})
 	var newClients []interface{}
@@ -1421,31 +1408,28 @@ func (s *InboundService) ResetClientExpiryTimeByEmail(clientEmail string, expiry
 	settings["clients"] = newClients
 	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return err
+		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	_, err = s.UpdateInboundClient(inbound, clientId)
-	if err != nil {
-		return err
-	}
-	return nil
+	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	return needRestart, err
 }
 
-func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, totalGB int) error {
+func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, totalGB int) (bool, error) {
 	if totalGB < 0 {
-		return common.NewError("totalGB must be >= 0")
+		return false, common.NewError("totalGB must be >= 0")
 	}
 	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if inbound == nil {
-		return common.NewError("Inbound Not Found For Email:", clientEmail)
+		return false, common.NewError("Inbound Not Found For Email:", clientEmail)
 	}
 
 	oldClients, err := s.GetClients(inbound)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	clientId := ""
@@ -1464,13 +1448,13 @@ func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, tota
 	}
 
 	if len(clientId) == 0 {
-		return common.NewError("Client Not Found For Email:", clientEmail)
+		return false, common.NewError("Client Not Found For Email:", clientEmail)
 	}
 
 	var settings map[string]interface{}
 	err = json.Unmarshal([]byte(inbound.Settings), &settings)
 	if err != nil {
-		return err
+		return false, err
 	}
 	clients := settings["clients"].([]interface{})
 	var newClients []interface{}
@@ -1484,14 +1468,11 @@ func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, tota
 	settings["clients"] = newClients
 	modifiedSettings, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return err
+		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	_, err = s.UpdateInboundClient(inbound, clientId)
-	if err != nil {
-		return err
-	}
-	return nil
+	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	return needRestart, err
 }
 
 func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
@@ -1584,10 +1565,7 @@ func (s *InboundService) ResetAllClientTraffics(id int) error {
 		Updates(map[string]interface{}{"enable": true, "up": 0, "down": 0})
 
 	err := result.Error
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (s *InboundService) ResetAllTraffics() error {
@@ -1598,10 +1576,7 @@ func (s *InboundService) ResetAllTraffics() error {
 		Updates(map[string]interface{}{"up": 0, "down": 0})
 
 	err := result.Error
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (s *InboundService) DelDepletedClients(id int) (err error) {
@@ -1675,11 +1650,7 @@ func (s *InboundService) DelDepletedClients(id int) (err error) {
 	}
 
 	err = tx.Where(whereText+" and enable = ?", id, false).Delete(xray.ClientTraffic{}).Error
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (s *InboundService) GetClientTrafficTgBot(tgId string) ([]*xray.ClientTraffic, error) {

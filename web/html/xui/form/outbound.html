@@ -11,6 +11,9 @@
         <a-form-item label='{{ i18n "pages.xray.outbound.tag" }}' has-feedback :validate-status="outModal.duplicateTag? 'warning' : 'success'">
             <a-input v-model.trim="outbound.tag" @change="outModal.check()" placeholder='{{ i18n "pages.xray.outbound.tagDesc" }}'></a-input>
         </a-form-item>
+        <a-form-item label='{{ i18n "pages.xray.outbound.sendThrough" }}'>
+            <a-input v-model="outbound.sendThrough"></a-input>
+        </a-form-item>
 
 <!-- freedom settings-->
 <template v-if="outbound.protocol === Protocols.Freedom">
@@ -252,6 +255,7 @@
                 <a-select-option value="wechat-video">WeChat</a-select-option>
                 <a-select-option value="dtls">DTLS 1.2</a-select-option>
                 <a-select-option value="wireguard">WireGuard</a-select-option>
+                <a-select-option value="dns">DNS</a-select-option>
             </a-select>
         </a-form-item>
         <a-form-item label='{{ i18n "password" }}'>
@@ -328,6 +332,9 @@
     <template v-if="outbound.stream.network === 'grpc'">
         <a-form-item label='Service Name'>
             <a-input v-model.trim="outbound.stream.grpc.serviceName"></a-input>
+        </a-form-item>
+        <a-form-item label="Authority">
+            <a-input v-model.trim="outbound.stream.grpc.authority"></a-input>
         </a-form-item>
         <a-form-item label='Multi Mode'>
             <a-switch v-model="outbound.stream.grpc.multiMode"></a-switch>
@@ -422,21 +429,23 @@
 </template>
 
 <!-- mux settings -->
-<a-form-item label="Mux">
-    <a-switch v-model="outbound.mux.enabled"></a-switch>
-</a-form-item>
-<template v-if="outbound.mux.enabled">
-    <a-form-item label="Concurrency">
-        <a-input-number v-model="outbound.mux.concurrency" :min="-1" :max="1024"></a-input-number>
+<template v-if="outbound.canEnableMux()">
+    <a-form-item label="Mux">
+        <a-switch v-model="outbound.mux.enabled"></a-switch>
     </a-form-item>
-    <a-form-item label="xudp Concurrency">
-        <a-input-number v-model="outbound.mux.xudpConcurrency" :min="-1" :max="1024"></a-input-number>
-    </a-form-item>
-    <a-form-item label="xudp UDP 443">
-        <a-select v-model="outbound.mux.xudpProxyUDP443" :dropdown-class-name="themeSwitcher.currentTheme">
-            <a-select-option v-for="c in ['reject', 'allow', 'skip']" :value="c">[[ c ]]</a-select-option>
-        </a-select>
-    </a-form-item>
+    <template v-if="outbound.mux.enabled">
+        <a-form-item label="Concurrency">
+            <a-input-number v-model="outbound.mux.concurrency" :min="-1" :max="1024"></a-input-number>
+        </a-form-item>
+        <a-form-item label="xudp Concurrency">
+            <a-input-number v-model="outbound.mux.xudpConcurrency" :min="-1" :max="1024"></a-input-number>
+        </a-form-item>
+        <a-form-item label="xudp UDP 443">
+            <a-select v-model="outbound.mux.xudpProxyUDP443" :dropdown-class-name="themeSwitcher.currentTheme">
+                <a-select-option v-for="c in ['reject', 'allow', 'skip']" :value="c">[[ c ]]</a-select-option>
+            </a-select>
+        </a-form-item>
+    </template>
 </template>
 
 </a-form>

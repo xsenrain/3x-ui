@@ -257,20 +257,22 @@ class QuicStreamSettings extends CommonClass {
 }
 
 class GrpcStreamSettings extends CommonClass {
-    constructor(serviceName="", multiMode=false) {
+    constructor(serviceName="", multiMode=false, authority="") {
         super();
         this.serviceName = serviceName;
         this.multiMode = multiMode;
+        this.authority = authority;
     }
 
     static fromJson(json={}) {
-        return new GrpcStreamSettings(json.serviceName, json.multiMode);
+        return new GrpcStreamSettings(json.serviceName, json.multiMode,json.authority);
     }
 
     toJson() {
         return {
             serviceName: this.serviceName,
             multiMode: this.multiMode,
+            authority: this.authority
         }
     }
 }
@@ -501,6 +503,7 @@ class Outbound extends CommonClass {
         protocol=Protocols.VMess,
         settings=null,
         streamSettings = new StreamSettings(),
+        sendThrough,
         mux = new Mux(),
     ) {
         super();
@@ -508,6 +511,7 @@ class Outbound extends CommonClass {
         this._protocol = protocol;
         this.settings = settings == null ? Outbound.Settings.getSettings(protocol) : settings;
         this.stream = streamSettings;
+        this.sendThrough = sendThrough;
         this.mux = mux;
     }
 
@@ -543,6 +547,10 @@ class Outbound extends CommonClass {
         return [Protocols.VMess, Protocols.VLESS, Protocols.Trojan, Protocols.Shadowsocks].includes(this.protocol);
     }
 
+    canEnableMux() {
+        return [Protocols.VMess, Protocols.VLESS, Protocols.Trojan, Protocols.Shadowsocks, Protocols.HTTP, Protocols.Socks].includes(this.protocol);
+    }
+
     hasVnext() {
         return [Protocols.VMess, Protocols.VLESS].includes(this.protocol);
     }
@@ -573,16 +581,25 @@ class Outbound extends CommonClass {
             json.protocol,
             Outbound.Settings.fromJson(json.protocol, json.settings),
             StreamSettings.fromJson(json.streamSettings),
+            json.sendThrough,
             Mux.fromJson(json.mux),
         )
     }
 
     toJson() {
+        var stream;
+        if (this.canEnableStream()) {
+            stream = this.stream.toJson();
+        } else {
+            if (this.stream?.sockopt)
+                stream = { sockopt: this.stream.sockopt.toJson() };
+        }
         return {
             tag: this.tag == '' ? undefined : this.tag,
             protocol: this.protocol,
             settings: this.settings instanceof CommonClass ? this.settings.toJson() : this.settings,
-            streamSettings: this.canEnableStream() ? this.stream.toJson() : undefined,
+            streamSettings: stream,
+            sendThrough: this.sendThrough != "" ? this.sendThrough : undefined,
             mux: this.mux?.enabled ? this.mux : undefined,
         };
     }
@@ -695,7 +712,7 @@ class Outbound extends CommonClass {
         let data = link.split('?');
         if(data.length != 2) return null;
 
-        const regex = /([^@]+):\/\/([^@]+)@([^:]+):(\d+)\?(.*)$/;
+        const regex = /([^@]+):\/\/([^@]+)@(.+):(\d+)\?(.*)$/;
         const match = link.match(regex);
 
         if (!match) return null;
