@@ -194,8 +194,7 @@ class WsStreamSettings extends CommonClass {
     static fromJson(json={}) {
         return new WsStreamSettings(
             json.path,
-            json.host,
-            json.headers && !ObjectUtil.isEmpty(json.headers.Host) ? json.headers.Host : '',
+            json.host
         );
     }
 
@@ -289,8 +288,7 @@ class HttpUpgradeStreamSettings extends CommonClass {
     static fromJson(json={}) {
         return new HttpUpgradeStreamSettings(
             json.path,
-            json.Host,
-            json.headers && !ObjectUtil.isEmpty(json.headers.Host) ? json.headers.Host : '',
+            json.host
         );
     }
 
@@ -692,12 +690,12 @@ class Outbound extends CommonClass {
                 url.searchParams.get('quicSecurity') ?? 'none',
                 url.searchParams.get('key') ?? '',
                 headerType ?? 'none');
-            } else if (type === 'grpc') {
-                stream.grpc = new GrpcStreamSettings(
-                    url.searchParams.get('serviceName') ?? '',
-                    url.searchParams.get('authority') ?? '',
-                    url.searchParams.get('mode') == 'multi');
-            } else if (type === 'httpupgrade') {
+        } else if (type === 'grpc') {
+            stream.grpc = new GrpcStreamSettings(
+                url.searchParams.get('serviceName') ?? '',
+                url.searchParams.get('authority') ?? '',
+                url.searchParams.get('mode') == 'multi');
+        } else if (type === 'httpupgrade') {
             stream.httpupgrade = new HttpUpgradeStreamSettings(path,host);
         }
 
@@ -832,7 +830,7 @@ Outbound.FreedomSettings.Fragment = class extends CommonClass {
 Outbound.BlackholeSettings = class extends CommonClass {
     constructor(type) {
         super();
-        this.type;
+        this.type = type;
     }
 
     static fromJson(json={}) {
