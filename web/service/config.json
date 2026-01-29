@@ -19,7 +19,7 @@
       "tag": "api",
       "listen": "127.0.0.1",
       "port": 62789,
-      "protocol": "dokodemo-door",
+      "protocol": "tunnel",
       "settings": {
         "address": "127.0.0.1"
       }
@@ -30,7 +30,7 @@
       "tag": "direct",
       "protocol": "freedom",
       "settings": {
-        "domainStrategy": "UseIP",
+        "domainStrategy": "AsIs",
         "redirect": "",
         "noises": []
       }
@@ -51,8 +51,8 @@
     "system": {
       "statsInboundDownlink": true,
       "statsInboundUplink": true,
-      "statsOutboundDownlink": true,
-      "statsOutboundUplink": true
+      "statsOutboundDownlink": false,
+      "statsOutboundUplink": false
     }
   },
   "routing": {
@@ -81,5 +81,9 @@
       }
     ]
   },
-  "stats": {}
+  "stats": {},
+  "metrics": {
+    "tag": "metrics_out",
+    "listen": "127.0.0.1:11111"
+  }
 }
