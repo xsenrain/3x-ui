@@ -141,7 +141,6 @@ func (t *Tgbot) OnReceive() {
 					userStateMgr.clear(message.Chat.ID)
 					t.addClient(message.Chat.ID, t.BuildClientDraftMessage())
 				}
-
 			} else {
 				if message.UsersShared != nil {
 					if checkAdmin(message.From.ID) {
@@ -167,7 +166,7 @@ func (t *Tgbot) OnReceive() {
 			return nil
 		}, th.AnyMessage())
 
-		h.Start()
+		_ = h.Start()
 	}()
 }
 
@@ -205,7 +204,7 @@ func (t *Tgbot) answerCommand(message *telego.Message, chatId int64, isAdmin boo
 			if isAdmin {
 				t.searchClient(chatId, commandArgs[0])
 			} else {
-				t.getClientUsage(chatId, int64(message.From.ID), commandArgs[0])
+				t.getClientUsage(chatId, message.From.ID, commandArgs[0])
 			}
 		} else {
 			msg += t.I18nBot("tgbot.commands.usage")
@@ -235,6 +234,21 @@ func (t *Tgbot) answerCommand(message *telego.Message, chatId int64, isAdmin boo
 				handleUnknownCommand()
 				msg += t.I18nBot("tgbot.commands.restartUsage")
 			}
+		} else {
+			handleUnknownCommand()
+		}
+	case "clearall":
+		onlyMessage = true
+		if isAdmin {
+			inlineKeyboard := tu.InlineKeyboard(
+				tu.InlineKeyboardRow(
+					tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.cancelReset")).WithCallbackData(t.encodeQuery("reset_all_traffics_cancel")),
+				),
+				tu.InlineKeyboardRow(
+					tu.InlineKeyboardButton(t.I18nBot("tgbot.buttons.confirmResetTraffic")).WithCallbackData(t.encodeQuery("reset_all_traffics_c")),
+				),
+			)
+			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.messages.AreYouSure"), inlineKeyboard)
 		} else {
 			handleUnknownCommand()
 		}
@@ -595,12 +609,12 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 
 							if traffic.ExpiryTime > 0 {
 								if traffic.ExpiryTime-time.Now().Unix()*1000 < 0 {
-									date = -int64(days * 24 * 60 * 60000)
+									date = -(days * 24 * 60 * 60000)
 								} else {
-									date = traffic.ExpiryTime + int64(days*24*60*60000)
+									date = traffic.ExpiryTime + days*24*60*60000
 								}
 							} else {
-								date = traffic.ExpiryTime - int64(days*24*60*60000)
+								date = traffic.ExpiryTime - days*24*60*60000
 							}
 
 						}
@@ -685,12 +699,12 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				var date int64
 				if client_ExpiryTime > 0 {
 					if client_ExpiryTime-time.Now().Unix()*1000 < 0 {
-						date = -int64(days * 24 * 60 * 60000)
+						date = -(days * 24 * 60 * 60000)
 					} else {
-						date = client_ExpiryTime + int64(days*24*60*60000)
+						date = client_ExpiryTime + days*24*60*60000
 					}
 				} else {
-					date = client_ExpiryTime - int64(days*24*60*60000)
+					date = client_ExpiryTime - days*24*60*60000
 				}
 				client_ExpiryTime = date
 
@@ -1111,8 +1125,11 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 				}
 				t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.chooseInbound"), inbounds)
 			}
-
 		}
+	}
+
+	if !isAdmin && !isClientSelfCallback(callbackQuery.Data) {
+		return
 	}
 
 	switch callbackQuery.Data {
@@ -1458,7 +1475,6 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 	case "get_sorted_traffic_usage_report":
 		t.deleteMessageTgBot(chatId, callbackQuery.Message.GetMessageID())
 		emails, err := t.inboundService.GetAllEmails()
-
 		if err != nil {
 			t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.answers.errorOperation"), tu.ReplyKeyboardRemove())
 			return
@@ -1513,4 +1529,18 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 // checkAdmin checks if the given Telegram ID is an admin.
 func checkAdmin(tgId int64) bool {
 	return slices.Contains(adminIds, tgId)
+}
+
+// isClientSelfCallback reports whether a callback is one of the per-user client
+// actions that resolve their own data from the caller's Telegram id, and so are
+// safe to run for a non-admin. Every other callback is admin-only (default-deny).
+func isClientSelfCallback(data string) bool {
+	switch data {
+	case "client_traffic", "client_commands", "client_sub_links",
+		"client_individual_links", "client_qr_links":
+		return true
+	}
+	return strings.HasPrefix(data, "client_sub_links ") ||
+		strings.HasPrefix(data, "client_individual_links ") ||
+		strings.HasPrefix(data, "client_qr_links ")
 }

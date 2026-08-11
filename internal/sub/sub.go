@@ -89,6 +89,31 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		return nil, err
 	}
 
+	subClashAutoDetect, err := s.settingService.GetSubClashAutoDetect()
+	if err != nil {
+		subClashAutoDetect = false
+	}
+
+	subJsonAutoDetect, err := s.settingService.GetSubJsonAutoDetect()
+	if err != nil {
+		subJsonAutoDetect = false
+	}
+
+	subJsonAlwaysArray, err := s.settingService.GetSubJsonAlwaysArray()
+	if err != nil {
+		subJsonAlwaysArray = false
+	}
+
+	subJsonUserAgentRegex, err := s.settingService.GetSubJsonUserAgentRegex()
+	if err != nil {
+		subJsonUserAgentRegex = service.DefaultSubJsonUserAgentRegex
+	}
+
+	subClashUserAgentRegex, err := s.settingService.GetSubClashUserAgentRegex()
+	if err != nil {
+		subClashUserAgentRegex = service.DefaultSubClashUserAgentRegex
+	}
+
 	// Set base_path based on LinksPath for template rendering
 	// Ensure LinksPath ends with "/" for proper asset URL generation
 	basePath := LinksPath
@@ -239,11 +264,35 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 
 	g := engine.Group("/")
 
-	s.sub = NewSUBController(
-		g, LinksPath, JsonPath, ClashPath, subJsonEnable, subClashEnable, Encrypt, RemarkTemplate, SubUpdates,
-		SubJsonMux, SubJsonRules, SubJsonFinalMask, SubClashEnableRouting, SubClashRules, SubTitle, SubSupportUrl,
-		SubProfileUrl, SubAnnounce, SubEnableRouting, SubRoutingRules, SubHideSettings,
-		SubIncyEnableRouting, SubIncyRoutingRules)
+	s.sub = NewSUBController(g,
+		WithSUBPath(LinksPath),
+		WithSUBJsonPath(JsonPath),
+		WithSUBClashPath(ClashPath),
+		WithSUBClashAutoDetect(subClashAutoDetect),
+		WithSUBClashUserAgentRegex(subClashUserAgentRegex),
+		WithSUBJsonAutoDetect(subJsonAutoDetect),
+		WithSUBJsonUserAgentRegex(subJsonUserAgentRegex),
+		WithSUBJsonAlwaysArray(subJsonAlwaysArray),
+		WithSUBJsonEnabled(subJsonEnable),
+		WithSUBClashEnabled(subClashEnable),
+		WithSUBEncryption(Encrypt),
+		WithSUBRemarkTemplate(RemarkTemplate),
+		WithSUBUpdateInterval(SubUpdates),
+		WithSUBJsonMux(SubJsonMux),
+		WithSUBJsonRules(SubJsonRules),
+		WithSUBJsonFinalMask(SubJsonFinalMask),
+		WithSUBClashEnableRouting(SubClashEnableRouting),
+		WithSUBClashRules(SubClashRules),
+		WithSUBTitle(SubTitle),
+		WithSUBSupportURL(SubSupportUrl),
+		WithSUBProfileURL(SubProfileUrl),
+		WithSUBAnnounce(SubAnnounce),
+		WithSUBEnableRouting(SubEnableRouting),
+		WithSUBRoutingRules(SubRoutingRules),
+		WithSUBHideSettings(SubHideSettings),
+		WithSUBIncyEnableRouting(SubIncyEnableRouting),
+		WithSUBIncyRoutingRules(SubIncyRoutingRules),
+	)
 
 	return engine, nil
 }
@@ -253,7 +302,7 @@ func (s *Server) Start() (err error) {
 	// This is an anonymous function, no function name
 	defer func() {
 		if err != nil {
-			s.Stop()
+			_ = s.Stop()
 		}
 	}()
 
@@ -288,7 +337,7 @@ func (s *Server) Start() (err error) {
 	}
 
 	listenAddr := net.JoinHostPort(listen, strconv.Itoa(port))
-	listener, err := net.Listen("tcp", listenAddr)
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", listenAddr)
 	if err != nil {
 		return err
 	}
@@ -323,7 +372,7 @@ func (s *Server) Start() (err error) {
 	}
 
 	go func() {
-		s.httpServer.Serve(listener)
+		_ = s.httpServer.Serve(listener)
 	}()
 
 	return nil

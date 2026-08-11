@@ -14,7 +14,6 @@
   <a href="https://github.com/MHSanaei/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/mhsanaei/3x-ui/total.svg" alt="Downloads"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true" alt="License"></a>
   <a href="https://pkg.go.dev/github.com/mhsanaei/3x-ui/v3"><img src="https://pkg.go.dev/badge/github.com/mhsanaei/3x-ui/v3.svg" alt="Go Reference"></a>
-  <a href="https://goreportcard.com/report/github.com/mhsanaei/3x-ui/v3"><img src="https://goreportcard.com/badge/github.com/mhsanaei/3x-ui/v3" alt="Go Report Card"></a>
 </p>
 
 **3X-UI**, [Xray-core](https://github.com/XTLS/Xray-core) sunucularını yönetmek için geliştirilmiş profesyonel, açık kaynaklı bir web kontrol panelidir. Tek bir sanal sunucudan (VPS) çok düğümlü (multi-node) dağıtımlara kadar çok çeşitli proxy ve VPN protokollerini kurmak, yapılandırmak ve izlemek için temiz, çok dilli bir arayüz sağlar.
@@ -89,17 +88,15 @@ Kurulum sırasında rastgele bir kullanıcı adı, şifre ve erişim yolu oluşt
 
 Tam dokümantasyon için lütfen [proje Wiki sayfasını](https://github.com/MHSanaei/3x-ui/wiki) ziyaret edin.
 
-### Etkileşimsiz kurulum ve hazır bulut imajları
+### Etkileşimsiz kurulum
 
-Yükleyici, cloud-init ve hazır (golden) imajlar için **etkileşimsiz** olarak da çalışır.
+Yükleyici, cloud-init için **etkileşimsiz** olarak da çalışır.
 `XUI_NONINTERACTIVE=1` ayarlayın (veya TTY olmadan boru hattına aktarın); kurulum baştan
 sona hiçbir soru sormadan tamamlanır, rastgele kimlik bilgileri oluşturup bunları
 `/etc/x-ui/install-result.env` dosyasına yazar. Şunlar için [`deploy/`](deploy/) klasörüne bakın:
 
 - [Cloud-init user-data](deploy/cloud-init/) — herhangi bir bulutta etkileşimsiz kurulum (Hetzner/AWS/DO/Vultr/GCP/Azure/Oracle)
-- [Packer hazır imajı](deploy/packer/) — ilk açılışta her örnek (instance) için kimlik bilgileri oluşturan bir AWS EC2 AMI + qcow2 (amd64/arm64) imajı oluşturun
-- [Amazon Lightsail](deploy/lightsail/) — başlatma betiği + yeniden kullanılabilir anlık görüntü (snapshot) oluşturucu
-- [AWS Marketplace kontrol listesi](deploy/marketplace/aws/)
+- [Hetzner Cloud notları](deploy/marketplace/hetzner/) — Hetzner üzerinde cloud-init tabanlı dağıtım
 
 ## Desteklenen Platformlar
 

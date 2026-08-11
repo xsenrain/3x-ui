@@ -14,7 +14,6 @@
   <a href="https://github.com/MHSanaei/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/mhsanaei/3x-ui/total.svg" alt="Downloads"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true" alt="License"></a>
   <a href="https://pkg.go.dev/github.com/mhsanaei/3x-ui/v3"><img src="https://pkg.go.dev/badge/github.com/mhsanaei/3x-ui/v3.svg" alt="Go Reference"></a>
-  <a href="https://goreportcard.com/report/github.com/mhsanaei/3x-ui/v3"><img src="https://goreportcard.com/badge/github.com/mhsanaei/3x-ui/v3" alt="Go Report Card"></a>
 </p>
 
 **3X-UI** es un panel de control web avanzado y de código abierto para gestionar servidores [Xray-core](https://github.com/XTLS/Xray-core). Ofrece una interfaz limpia y multilingüe para desplegar, configurar y monitorear una amplia gama de protocolos de proxy y VPN — desde un único VPS hasta despliegues multinodo.
@@ -89,17 +88,15 @@ Durante la instalación se generan un nombre de usuario, una contraseña y una r
 
 Para la documentación completa, visita la [Wiki del proyecto](https://github.com/MHSanaei/3x-ui/wiki).
 
-### Instalación desatendida e imágenes de nube
+### Instalación desatendida
 
-El instalador también se ejecuta de forma **no interactiva** para cloud-init e imágenes doradas (golden images).
+El instalador también se ejecuta de forma **no interactiva** para cloud-init.
 Define `XUI_NONINTERACTIVE=1` (o canalízalo sin TTY) y realizará la instalación de principio a fin sin
 ninguna pregunta, generando credenciales aleatorias y escribiéndolas en
 `/etc/x-ui/install-result.env`. Consulta [`deploy/`](deploy/) para:
 
 - [User-data de cloud-init](deploy/cloud-init/) — instalación desatendida en cualquier nube (Hetzner/AWS/DO/Vultr/GCP/Azure/Oracle)
-- [Imagen dorada de Packer](deploy/packer/) — crea una AMI de AWS EC2 + qcow2 (amd64/arm64) con credenciales por instancia generadas en el primer arranque
-- [Amazon Lightsail](deploy/lightsail/) — script de lanzamiento + constructor de snapshots reutilizable
-- [Lista de verificación de AWS Marketplace](deploy/marketplace/aws/)
+- [Notas de Hetzner Cloud](deploy/marketplace/hetzner/) — despliegue basado en cloud-init en Hetzner
 
 ## Plataformas Compatibles
 

@@ -32,6 +32,13 @@ export const ClientRecordSchema = z.object({
   inboundIds: nullableNumberArray.optional(),
   traffic: ClientTrafficSchema.nullable().optional(),
   reverse: z.object({ tag: z.string().optional() }).loose().nullable().optional(),
+  privateKey: z.string().optional(),
+  publicKey: z.string().optional(),
+  allowedIPs: z.string().optional(),
+  preSharedKey: z.string().optional(),
+  keepAlive: z.number().optional(),
+  secret: z.string().optional(),
+  adTag: z.string().optional(),
   createdAt: z.number().optional(),
   updatedAt: z.number().optional(),
 }).loose();
@@ -44,15 +51,32 @@ export const InboundOptionSchema = z.object({
   port: z.number().optional(),
   tlsFlowCapable: z.boolean().optional(),
   ssMethod: z.string().optional(),
+  wgPublicKey: z.string().optional(),
+  wgMtu: z.number().optional(),
+  wgDns: z.string().optional(),
+  mtprotoDomain: z.string().optional(),
   // Hosting node id; absent/null for this panel's own inbounds (#4997).
   nodeId: z.number().nullable().optional(),
+  // Share-host resolution inputs, mirroring the backend resolveInboundAddress so
+  // the clients page picks the same WireGuard endpoint host as the subscription:
+  // the hosting node address, the inbound listen, and its share-address strategy.
+  nodeAddress: z.string().optional(),
+  listen: z.string().optional(),
+  shareAddr: z.string().optional(),
+  shareAddrStrategy: z.string().optional(),
 }).loose();
 
 export const InboundOptionsSchema = z.array(InboundOptionSchema);
 
+// The *Count fields are exact; the email arrays stop at the server's cap and
+// only feed the hover popovers, so never derive a counter from their length.
 export const ClientsSummarySchema = z.object({
   total: z.number(),
   active: z.number(),
+  onlineCount: z.number().optional().default(0),
+  depletedCount: z.number().optional().default(0),
+  expiringCount: z.number().optional().default(0),
+  deactiveCount: z.number().optional().default(0),
   online: nullableStringArray,
   depleted: nullableStringArray,
   expiring: nullableStringArray,
@@ -96,6 +120,13 @@ export const BulkAdjustResultSchema = z.object({
 
 export const BulkDeleteResultSchema = z.object({
   deleted: z.number(),
+  skipped: z
+    .array(z.object({ email: z.string(), reason: z.string() }))
+    .optional(),
+});
+
+export const BulkSetEnableResultSchema = z.object({
+  changed: z.number(),
   skipped: z
     .array(z.object({ email: z.string(), reason: z.string() }))
     .optional(),
@@ -221,6 +252,7 @@ export type ClientPageResponse = z.infer<typeof ClientPageResponseSchema>;
 export type ClientHydrate = z.infer<typeof ClientHydrateSchema>;
 export type BulkAdjustResult = z.infer<typeof BulkAdjustResultSchema>;
 export type BulkDeleteResult = z.infer<typeof BulkDeleteResultSchema>;
+export type BulkSetEnableResult = z.infer<typeof BulkSetEnableResultSchema>;
 export type BulkCreateResult = z.infer<typeof BulkCreateResultSchema>;
 export type BulkAttachResult = z.infer<typeof BulkAttachResultSchema>;
 export type BulkDetachResult = z.infer<typeof BulkDetachResultSchema>;

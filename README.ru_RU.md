@@ -14,7 +14,6 @@
   <a href="https://github.com/MHSanaei/3x-ui/releases/latest"><img src="https://img.shields.io/github/downloads/mhsanaei/3x-ui/total.svg" alt="Downloads"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html"><img src="https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true" alt="License"></a>
   <a href="https://pkg.go.dev/github.com/mhsanaei/3x-ui/v3"><img src="https://pkg.go.dev/badge/github.com/mhsanaei/3x-ui/v3.svg" alt="Go Reference"></a>
-  <a href="https://goreportcard.com/report/github.com/mhsanaei/3x-ui/v3"><img src="https://goreportcard.com/badge/github.com/mhsanaei/3x-ui/v3" alt="Go Report Card"></a>
 </p>
 
 **3X-UI** — продвинутая веб-панель управления с открытым исходным кодом для управления серверами [Xray-core](https://github.com/XTLS/Xray-core). Она предоставляет аккуратный многоязычный интерфейс для развёртывания, настройки и мониторинга широкого спектра протоколов прокси и VPN — от одного VPS до развёртываний с несколькими узлами.
@@ -89,17 +88,15 @@ bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.
 
 Полную документацию смотрите в [вики проекта](https://github.com/MHSanaei/3x-ui/wiki).
 
-### Автоматическая установка и облачные образы
+### Автоматическая установка
 
-Установщик также работает в **неинтерактивном** режиме для cloud-init и готовых образов.
+Установщик также работает в **неинтерактивном** режиме для cloud-init.
 Задайте `XUI_NONINTERACTIVE=1` (или передайте по конвейеру без TTY), и установка пройдёт от начала до конца
 без единого запроса: будут сгенерированы случайные учётные данные и записаны в
 `/etc/x-ui/install-result.env`. Смотрите [`deploy/`](deploy/) для:
 
 - [Cloud-init user-data](deploy/cloud-init/) — автоматическая установка в любом облаке (Hetzner/AWS/DO/Vultr/GCP/Azure/Oracle)
-- [Готовый образ Packer](deploy/packer/) — сборка AWS EC2 AMI + qcow2 (amd64/arm64) с учётными данными для каждого экземпляра, генерируемыми при первой загрузке
-- [Amazon Lightsail](deploy/lightsail/) — скрипт запуска + переиспользуемый сборщик снимков
-- [Чек-лист для AWS Marketplace](deploy/marketplace/aws/)
+- [Заметки по Hetzner Cloud](deploy/marketplace/hetzner/) — развёртывание на Hetzner на базе cloud-init
 
 ## Поддерживаемые платформы
 

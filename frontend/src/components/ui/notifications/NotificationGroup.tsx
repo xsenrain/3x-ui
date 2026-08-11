@@ -40,7 +40,7 @@ export function NotificationGroup({ config, selected, onToggle, onToggleAll, all
         />
       }
     >
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={8} style={{ width: '100%' }}>
         {config.events.map((event) => (
           <NotificationEvent
             key={event.key}
@@ -51,6 +51,7 @@ export function NotificationGroup({ config, selected, onToggle, onToggleAll, all
             {event.extra?.({
               value: Number((allSetting as unknown as Record<string, unknown>)[event.settingKey]) || 0,
               onChange: (v) => updateSetting({ [event.settingKey]: v }),
+              ariaLabel: t(`pages.settings.${event.label}`),
             })}
           </NotificationEvent>
         ))}
