@@ -5,6 +5,7 @@ import (
 	"math"
 	"net"
 	"net/mail"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -26,14 +27,18 @@ type AllSetting struct {
 	WebBasePath       string `json:"webBasePath" form:"webBasePath"`
 	SessionMaxAge     int    `json:"sessionMaxAge" form:"sessionMaxAge" validate:"gte=1,lte=525600"`
 	TrustedProxyCIDRs string `json:"trustedProxyCIDRs" form:"trustedProxyCIDRs"`
+	IpLimitAllowlist  string `json:"ipLimitAllowlist" form:"ipLimitAllowlist"`
 	PanelOutbound     string `json:"panelOutbound" form:"panelOutbound"`
 
-	PageSize                  int    `json:"pageSize" form:"pageSize" validate:"gte=0,lte=1000"`
-	ExpireDiff                int    `json:"expireDiff" form:"expireDiff" validate:"gte=0"`
-	TrafficDiff               int    `json:"trafficDiff" form:"trafficDiff" validate:"gte=0,lte=100"`
-	RemarkTemplate            string `json:"remarkTemplate" form:"remarkTemplate"`
-	SubShowIdentityOnAllLinks bool   `json:"subShowIdentityOnAllLinks" form:"subShowIdentityOnAllLinks"`
-	Datepicker                string `json:"datepicker" form:"datepicker"`
+	PageSize                   int    `json:"pageSize" form:"pageSize" validate:"gte=0,lte=1000"`
+	ExpireDiff                 int    `json:"expireDiff" form:"expireDiff" validate:"gte=0"`
+	TrafficDiff                int    `json:"trafficDiff" form:"trafficDiff" validate:"gte=0,lte=100"`
+	RemarkTemplate             string `json:"remarkTemplate" form:"remarkTemplate"`
+	SubShowIdentityOnAllLinks  bool   `json:"subShowIdentityOnAllLinks" form:"subShowIdentityOnAllLinks"`
+	SubInfoNodeEnable          bool   `json:"subInfoNodeEnable" form:"subInfoNodeEnable"`
+	SubExpiredTemplate         string `json:"subExpiredTemplate" form:"subExpiredTemplate"`
+	SubTrafficDepletedTemplate string `json:"subTrafficDepletedTemplate" form:"subTrafficDepletedTemplate"`
+	Datepicker                 string `json:"datepicker" form:"datepicker"`
 
 	TgBotEnable     bool   `json:"tgBotEnable" form:"tgBotEnable"`
 	TgBotToken      string `json:"tgBotToken" form:"tgBotToken"`
@@ -102,9 +107,36 @@ type AllSetting struct {
 	SubClashRules               string `json:"subClashRules" form:"subClashRules"`
 	SubJsonMux                  string `json:"subJsonMux" form:"subJsonMux"`
 	SubJsonRules                string `json:"subJsonRules" form:"subJsonRules"`
+	SubJsonRoutingRules         string `json:"subJsonRoutingRules" form:"subJsonRoutingRules"`
 	SubJsonFinalMask            string `json:"subJsonFinalMask" form:"subJsonFinalMask"`
+	SubJsonObservatory          string `json:"subJsonObservatory" form:"subJsonObservatory"`
 	SubThemeDir                 string `json:"subThemeDir" form:"subThemeDir"`
 	SubHideSettings             bool   `json:"subHideSettings" form:"subHideSettings"`
+
+	// Happ client customization settings (app-management / routing / UX).
+	SubHappAutoDetect          bool   `json:"subHappAutoDetect" form:"subHappAutoDetect"`
+	SubHappProviderId          string `json:"subHappProviderId" form:"subHappProviderId"`
+	SubHappNewUrl              string `json:"subHappNewUrl" form:"subHappNewUrl"`
+	SubHappFallbackUrl         string `json:"subHappFallbackUrl" form:"subHappFallbackUrl"`
+	SubHappSubInfoColor        string `json:"subHappSubInfoColor" form:"subHappSubInfoColor"`
+	SubHappSubInfoText         string `json:"subHappSubInfoText" form:"subHappSubInfoText"`
+	SubHappSubInfoButtonText   string `json:"subHappSubInfoButtonText" form:"subHappSubInfoButtonText"`
+	SubHappSubInfoButtonLink   string `json:"subHappSubInfoButtonLink" form:"subHappSubInfoButtonLink"`
+	SubHappSubExpire           bool   `json:"subHappSubExpire" form:"subHappSubExpire"`
+	SubHappSubExpireButtonLink string `json:"subHappSubExpireButtonLink" form:"subHappSubExpireButtonLink"`
+	SubHappNotificationExpire  bool   `json:"subHappNotificationExpire" form:"subHappNotificationExpire"`
+	SubHappNoLimit             bool   `json:"subHappNoLimit" form:"subHappNoLimit"`
+	SubHappAlwaysHwid          bool   `json:"subHappAlwaysHwid" form:"subHappAlwaysHwid"`
+	SubHappTunMode             string `json:"subHappTunMode" form:"subHappTunMode"`
+	SubHappTunType             string `json:"subHappTunType" form:"subHappTunType"`
+	SubHappExcludeRoutes       string `json:"subHappExcludeRoutes" form:"subHappExcludeRoutes"`
+	SubHappExcludeApns         bool   `json:"subHappExcludeApns" form:"subHappExcludeApns"`
+	SubHappColorProfile        string `json:"subHappColorProfile" form:"subHappColorProfile"`
+	SubHappPingType            string `json:"subHappPingType" form:"subHappPingType"`
+	SubHappAutoConnect         bool   `json:"subHappAutoConnect" form:"subHappAutoConnect"`
+	SubHappAutoConnectType     string `json:"subHappAutoConnectType" form:"subHappAutoConnectType"`
+	SubHappPerAppMode          string `json:"subHappPerAppMode" form:"subHappPerAppMode"`
+	SubHappPerAppList          string `json:"subHappPerAppList" form:"subHappPerAppList"`
 
 	LdapEnable             bool   `json:"ldapEnable" form:"ldapEnable"`
 	LdapHost               string `json:"ldapHost" form:"ldapHost"`
@@ -150,6 +182,42 @@ func pathHasForbiddenChar(s string) bool {
 		}
 	}
 	return false
+}
+
+// CheckNetipAddrOrPrefixList mirrors parseIpLimitAllowlist exactly: net and netip
+// disagree (net accepts "/024", netip does not), so save and scan must share rules.
+func CheckNetipAddrOrPrefixList(list, message string) error {
+	for entry := range strings.SplitSeq(list, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if _, err := netip.ParseAddr(entry); err == nil {
+			continue
+		}
+		if _, err := netip.ParsePrefix(entry); err != nil {
+			return common.NewError(message, entry)
+		}
+	}
+	return nil
+}
+
+// checkIPOrCIDRList rejects the first comma-separated entry that is neither a
+// bare address nor a CIDR, naming it with the caller's message.
+func checkIPOrCIDRList(list, message string) error {
+	for entry := range strings.SplitSeq(list, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if ip := net.ParseIP(entry); ip != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(entry); err != nil {
+			return common.NewError(message, entry)
+		}
+	}
+	return nil
 }
 
 func (s *AllSetting) CheckValid() error {
@@ -234,17 +302,14 @@ func (s *AllSetting) CheckValid() error {
 		s.SubClashPath += "/"
 	}
 
-	for cidr := range strings.SplitSeq(s.TrustedProxyCIDRs, ",") {
-		cidr = strings.TrimSpace(cidr)
-		if cidr == "" {
-			continue
-		}
-		if ip := net.ParseIP(cidr); ip != nil {
-			continue
-		}
-		if _, _, err := net.ParseCIDR(cidr); err != nil {
-			return common.NewError("trusted proxy CIDR is not valid:", cidr)
-		}
+	if err := checkIPOrCIDRList(s.TrustedProxyCIDRs, "trusted proxy CIDR is not valid:"); err != nil {
+		return err
+	}
+
+	// Rejected here rather than skipped at scan time: a typo in an allowlist
+	// entry silently leaves the address unprotected until a trusted network gets banned.
+	if err := CheckNetipAddrOrPrefixList(s.IpLimitAllowlist, "IP limit allowlist entry is not valid:"); err != nil {
+		return err
 	}
 
 	_, err := time.LoadLocation(s.TimeLocation)

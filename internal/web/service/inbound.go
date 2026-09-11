@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/amneziawg"
+	"github.com/mhsanaei/3x-ui/v3/internal/amneziawgnet"
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
@@ -29,9 +32,11 @@ import (
 )
 
 type InboundService struct {
-	xrayApi         xray.XrayAPI
 	clientService   ClientService
 	fallbackService FallbackService
+	// FromNodeSync marks a master push: the row was validated where the operator
+	// acted, and a node that refuses it only falls out of sync.
+	FromNodeSync bool
 }
 
 func normalizeTrafficResetDay(day int) int {
@@ -55,6 +60,11 @@ func normalizeInboundShareAddress(inbound *model.Inbound) {
 	if inbound == nil {
 		return
 	}
+	if inbound.Protocol == model.MTProto {
+		inbound.ShareAddrStrategy = "listen"
+		inbound.ShareAddr = ""
+		return
+	}
 	inbound.ShareAddrStrategy = normalizeInboundShareAddrStrategy(inbound.ShareAddrStrategy)
 	if addr, err := normalizeInboundShareHost(inbound.ShareAddr); err == nil {
 		inbound.ShareAddr = addr
@@ -65,6 +75,11 @@ func normalizeInboundShareAddress(inbound *model.Inbound) {
 
 func normalizeInboundShareAddressStrict(inbound *model.Inbound) error {
 	if inbound == nil {
+		return nil
+	}
+	if inbound.Protocol == model.MTProto {
+		inbound.ShareAddrStrategy = "listen"
+		inbound.ShareAddr = ""
 		return nil
 	}
 	inbound.ShareAddrStrategy = normalizeInboundShareAddrStrategy(inbound.ShareAddrStrategy)
@@ -109,6 +124,17 @@ func normalizeInboundShareHost(raw string) (string, error) {
 		return "", err
 	}
 	return host, nil
+}
+
+func legacyMtprotoShareAddr(inbound *model.Inbound) string {
+	if inbound == nil || inbound.Protocol != model.MTProto || strings.TrimSpace(inbound.ShareAddrStrategy) != "custom" {
+		return ""
+	}
+	addr, err := normalizeInboundShareHost(inbound.ShareAddr)
+	if err != nil {
+		return ""
+	}
+	return addr
 }
 
 func normalizeInboundShareAddressColumns(tx *gorm.DB) error {
@@ -308,12 +334,18 @@ type InboundOption struct {
 	Protocol       string `json:"protocol" example:"vless"`
 	Port           int    `json:"port" example:"443"`
 	Enable         bool   `json:"enable" example:"true"`
+	Network        string `json:"network,omitempty"`
+	Security       string `json:"security,omitempty"`
 	TlsFlowCapable bool   `json:"tlsFlowCapable" example:"true"`
 	SsMethod       string `json:"ssMethod"`
 	WgPublicKey    string `json:"wgPublicKey,omitempty"`
 	WgMtu          int    `json:"wgMtu,omitempty"`
 	WgDns          string `json:"wgDns,omitempty"`
 	MtprotoDomain  string `json:"mtprotoDomain,omitempty"`
+	// AwgServer carries the full AmneziaWG server block (keys, subnet,
+	// obfuscation params) so the clients page can render a downloadable
+	// per-client .conf without a second round trip.
+	AwgServer *amneziawg.ServerSettings `json:"awgServer,omitempty"`
 	// Hosting node; nil for this panel's own inbounds. Lets the clients
 	// page map a node filter onto inbound IDs (#4997).
 	NodeId *int `json:"nodeId,omitempty"`
@@ -345,9 +377,10 @@ func (s *InboundService) GetInboundOptions(userId int) ([]InboundOption, error) 
 		ShareAddrStrategy string `gorm:"column:share_addr_strategy"`
 		NodeId            *int   `gorm:"column:node_id"`
 		NodeAddress       string `gorm:"column:node_address"`
+		DisableFlow       bool   `gorm:"column:disable_flow"`
 	}
 	err := db.Table("inbounds").
-		Select("inbounds.id, inbounds.remark, inbounds.tag, inbounds.protocol, inbounds.port, inbounds.enable, inbounds.stream_settings, inbounds.settings, inbounds.listen, inbounds.share_addr, inbounds.share_addr_strategy, inbounds.node_id, COALESCE(nodes.address, '') AS node_address").
+		Select("inbounds.id, inbounds.remark, inbounds.tag, inbounds.protocol, inbounds.port, inbounds.enable, inbounds.stream_settings, inbounds.settings, inbounds.listen, inbounds.share_addr, inbounds.share_addr_strategy, inbounds.node_id, COALESCE(nodes.address, '') AS node_address, inbounds.disable_flow").
 		Joins("LEFT JOIN nodes ON nodes.id = inbounds.node_id").
 		Where("inbounds.user_id = ?", userId).
 		Order("inbounds.id ASC").
@@ -358,6 +391,7 @@ func (s *InboundService) GetInboundOptions(userId int) ([]InboundOption, error) 
 	out := make([]InboundOption, 0, len(rows))
 	for _, r := range rows {
 		wgPublicKey, wgMtu, wgDns := inboundWireguardHints(r.Protocol, r.Settings)
+		netHint, secHint := inboundStreamHints(r.Protocol, r.StreamSettings, r.Settings)
 		shareAddrStrategy := r.ShareAddrStrategy
 		if shareAddrStrategy == "node" {
 			shareAddrStrategy = ""
@@ -369,12 +403,15 @@ func (s *InboundService) GetInboundOptions(userId int) ([]InboundOption, error) 
 			Protocol:          r.Protocol,
 			Port:              r.Port,
 			Enable:            r.Enable,
-			TlsFlowCapable:    inboundCanEnableTlsFlow(r.Protocol, r.StreamSettings, r.Settings),
+			Network:           netHint,
+			Security:          secHint,
+			TlsFlowCapable:    !r.DisableFlow && inboundCanEnableTlsFlow(r.Protocol, r.StreamSettings, r.Settings),
 			SsMethod:          inboundShadowsocksMethod(r.Protocol, r.Settings),
 			WgPublicKey:       wgPublicKey,
 			WgMtu:             wgMtu,
 			WgDns:             wgDns,
 			MtprotoDomain:     inboundMtprotoDomain(r.Protocol, r.Settings),
+			AwgServer:         inboundAmneziaWGServer(r.Protocol, r.Settings),
 			NodeId:            r.NodeId,
 			NodeAddress:       r.NodeAddress,
 			Listen:            r.Listen,
@@ -383,6 +420,44 @@ func (s *InboundService) GetInboundOptions(userId int) ([]InboundOption, error) 
 		})
 	}
 	return out, nil
+}
+
+func inboundStreamHints(protocol string, streamSettings string, settings string) (string, string) {
+	p := strings.ToLower(protocol)
+	if p == "wireguard" || p == "amneziawg" || p == "hysteria" {
+		return "udp", ""
+	}
+	var netHint, secHint string
+	if strings.TrimSpace(streamSettings) != "" {
+		var raw struct {
+			Network  string `json:"network"`
+			Security string `json:"security"`
+		}
+		if err := json.Unmarshal([]byte(streamSettings), &raw); err == nil {
+			netHint = raw.Network
+			secHint = raw.Security
+		}
+	}
+	if netHint == "" && strings.TrimSpace(settings) != "" {
+		var raw struct {
+			Network        string `json:"network"`
+			AllowedNetwork string `json:"allowedNetwork"`
+			UDP            bool   `json:"udp"`
+		}
+		if err := json.Unmarshal([]byte(settings), &raw); err == nil {
+			if raw.Network != "" {
+				netHint = raw.Network
+			} else if raw.AllowedNetwork != "" {
+				netHint = raw.AllowedNetwork
+			} else if raw.UDP {
+				netHint = "tcp,udp"
+			}
+		}
+	}
+	if netHint == "" {
+		netHint = "tcp"
+	}
+	return netHint, secHint
 }
 
 func inboundWireguardHints(protocol string, settings string) (string, int, string) {
@@ -409,6 +484,26 @@ func inboundWireguardHints(protocol string, settings string) (string, int, strin
 		}
 	}
 	return publicKey, parsed.MTU, parsed.DNS
+}
+
+// inboundAmneziaWGServer returns the AmneziaWG server block for the clients
+// page's config-download builder, or nil when the inbound isn't AmneziaWG or
+// its settings don't parse. PrivateKey is redacted: GetInboundOptions is a
+// shared, admin-wide list used to fill dropdowns, not a place a live tunnel
+// secret needs to travel — the frontend's own AwgServerOptionSchema never
+// reads it, so nothing is lost by not sending it, and it shouldn't widen the
+// blast radius of a log capture, proxy cache, or browser devtools screenshot.
+func inboundAmneziaWGServer(protocol string, settings string) *amneziawg.ServerSettings {
+	if protocol != string(model.AmneziaWG) || strings.TrimSpace(settings) == "" {
+		return nil
+	}
+	var parsed amneziawg.InboundSettings
+	if err := json.Unmarshal([]byte(settings), &parsed); err != nil || parsed.Server == nil {
+		return nil
+	}
+	redacted := *parsed.Server
+	redacted.PrivateKey = ""
+	return &redacted
 }
 
 // inboundMtprotoDomain returns the inbound-level FakeTLS default domain, used by
@@ -474,37 +569,40 @@ func (s *InboundService) GetAllEmails() ([]string, error) {
 	return emails, nil
 }
 
-// getAllEmailSubIDs returns email→subId. An email seen with two different
-// non-empty subIds is locked (mapped to "") so neither identity can claim it.
-func (s *InboundService) getAllEmailSubIDs() (map[string]string, error) {
+// emailSubIDsForClients returns lower(email)→subId for just the emails being
+// checked. One clients row owns an email's identity, so the answer no longer
+// needs a scan of every inbound's settings JSON (#6252).
+func (s *InboundService) emailSubIDsForClients(clients []model.Client) (map[string]string, error) {
+	want := make(map[string]struct{}, len(clients))
+	for i := range clients {
+		if email := strings.ToLower(strings.TrimSpace(clients[i].Email)); email != "" {
+			want[email] = struct{}{}
+		}
+	}
+	result := make(map[string]string, len(want))
+	if len(want) == 0 {
+		return result, nil
+	}
+	lowered := make([]string, 0, len(want))
+	for email := range want {
+		lowered = append(lowered, email)
+	}
 	db := database.GetDB()
-	var rows []struct {
-		Email string
-		SubID string
-	}
-	query := fmt.Sprintf(
-		"SELECT %s AS email, %s AS sub_id %s",
-		database.JSONFieldText("client.value", "email"),
-		database.JSONFieldText("client.value", "subId"),
-		database.JSONClientsFromInbound(),
-	)
-	if err := db.Raw(query).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	result := make(map[string]string, len(rows))
-	for _, r := range rows {
-		email := strings.ToLower(r.Email)
-		if email == "" {
-			continue
+	for _, batch := range chunkStrings(lowered, sqlInChunk) {
+		var rows []struct {
+			Email string
+			SubID string `gorm:"column:sub_id"`
 		}
-		subID := r.SubID
-		if existing, ok := result[email]; ok {
-			if existing != subID {
-				result[email] = ""
-			}
-			continue
+		err := db.Model(&model.ClientRecord{}).
+			Select("email, sub_id").
+			Where("LOWER(email) IN ?", batch).
+			Scan(&rows).Error
+		if err != nil {
+			return nil, err
 		}
-		result[email] = subID
+		for _, r := range rows {
+			result[strings.ToLower(r.Email)] = r.SubID
+		}
 	}
 	return result, nil
 }
@@ -556,6 +654,64 @@ func canonicalizeStreamNetworkKey(streamSettings string) string {
 		return streamSettings
 	}
 	return string(out)
+}
+
+// validateInboundTLSCertificates rejects incomplete TLS credentials before a save
+// can restart Xray. File paths belong to the node, so only presence is checked.
+func validateInboundTLSCertificates(streamSettings string) error {
+	if strings.TrimSpace(streamSettings) == "" {
+		return nil
+	}
+	var stream struct {
+		Security    string          `json:"security"`
+		TLSSettings json.RawMessage `json:"tlsSettings"`
+	}
+	if err := json.Unmarshal([]byte(streamSettings), &stream); err != nil {
+		return common.NewError("Invalid inbound stream settings: ", err)
+	}
+	if !strings.EqualFold(stream.Security, "tls") {
+		return nil
+	}
+	var settings struct {
+		Certificates []struct {
+			CertificateFile string   `json:"certificateFile"`
+			KeyFile         string   `json:"keyFile"`
+			Certificate     []string `json:"certificate"`
+			Key             []string `json:"key"`
+			Usage           string   `json:"usage"`
+		} `json:"certificates"`
+	}
+	if len(stream.TLSSettings) > 0 {
+		if err := json.Unmarshal(stream.TLSSettings, &settings); err != nil {
+			return common.NewError("Invalid inbound TLS settings: ", err)
+		}
+	}
+	hasServerCertificate := false
+	for i, cert := range settings.Certificates {
+		// Match Xray's file-over-inline precedence for each credential.
+		certificate := cert.CertificateFile
+		if certificate == "" {
+			certificate = strings.Join(cert.Certificate, "\n")
+		}
+		if strings.TrimSpace(certificate) == "" {
+			return common.NewErrorf("TLS certificate %d is missing. Configure a certificate file path or certificate content before saving the inbound.", i+1)
+		}
+		if strings.EqualFold(cert.Usage, "verify") {
+			continue
+		}
+		key := cert.KeyFile
+		if key == "" {
+			key = strings.Join(cert.Key, "\n")
+		}
+		if strings.TrimSpace(key) == "" {
+			return common.NewErrorf("TLS certificate %d is missing its private key. Configure a private key file path or private key content before saving the inbound.", i+1)
+		}
+		hasServerCertificate = true
+	}
+	if !hasServerCertificate {
+		return common.NewError("TLS requires a server certificate and private key. Configure an encipherment or issue certificate before saving the inbound.")
+	}
+	return nil
 }
 
 // finalMaskRealityTcpMasks returns the stream's finalmask.tcp masks when the
@@ -912,9 +1068,15 @@ func (s *InboundService) normalizeMtprotoXrayPort(inbound *model.Inbound, oldSet
 // Returns the created inbound, whether Xray needs restart, and any error.
 func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, bool, error) {
 	inbound.Id = 0
+	legacyShareAddr := legacyMtprotoShareAddr(inbound)
 	inbound.TrafficResetDay = normalizeTrafficResetDay(inbound.TrafficResetDay)
 	// Normalize streamSettings based on protocol
 	s.normalizeStreamSettings(inbound)
+	if !s.FromNodeSync {
+		if err := validateInboundTLSCertificates(inbound.StreamSettings); err != nil {
+			return inbound, false, err
+		}
+	}
 	if err := validateFinalMaskRealityCombo(inbound.StreamSettings); err != nil {
 		return inbound, false, err
 	}
@@ -925,34 +1087,42 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	if err := s.normalizeMtprotoXrayPort(inbound, ""); err != nil {
 		return inbound, false, err
 	}
+	if err := s.normalizeAmneziaWGSettings(inbound, ""); err != nil {
+		return inbound, false, err
+	}
+	if inbound.NodeID != nil && !isNodeEligibleProtocol(inbound.Protocol) {
+		return inbound, false, common.NewErrorf("%s inbounds cannot be assigned to a node", inbound.Protocol)
+	}
 	inbound.SubSortIndex = normalizeSubSortIndex(inbound.SubSortIndex)
 	if err := normalizeInboundShareAddressStrict(inbound); err != nil {
 		return inbound, false, err
 	}
 
-	conflict, err := s.checkPortConflict(inbound, 0)
+	tag, err := s.resolveInboundTag(inbound, 0)
 	if err != nil {
 		return inbound, false, err
 	}
-	if conflict != nil {
-		return inbound, false, common.NewError(conflict.String())
-	}
-
-	inbound.Tag, err = s.resolveInboundTag(inbound, 0)
-	if err != nil {
-		return inbound, false, err
-	}
+	inbound.Tag = tag
 
 	clients, err := s.GetClients(inbound)
 	if err != nil {
 		return inbound, false, err
 	}
-	existEmail, err := s.clientService.checkEmailsExistForClients(s, clients, nil)
+	existEmail, err := s.clientService.checkEmailsExistForClients(s, clients)
 	if err != nil {
 		return inbound, false, err
 	}
 	if existEmail != "" {
 		return inbound, false, common.NewError("Duplicate email:", existEmail)
+	}
+
+	if inbound.DisableFlow {
+		if stripped, changed := stripClientFlows(inbound.Settings); changed {
+			inbound.Settings = stripped
+		}
+		for i := range clients {
+			clients[i].Flow = ""
+		}
 	}
 
 	// Ensure created_at and updated_at on clients in settings
@@ -1000,7 +1170,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 			if client.Auth == "" {
 				return inbound, false, common.NewError("empty client ID")
 			}
-		case "wireguard":
+		case "wireguard", "amneziawg":
 			if client.PublicKey == "" {
 				return inbound, false, common.NewError("wireguard client requires a key")
 			}
@@ -1018,13 +1188,34 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		}
 	}
 
-	db := database.GetDB()
 	needRestart := false
 	var postCommitApply func()
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = runSerializedTx(func(tx *gorm.DB) error {
+		conflict, cErr := checkPortConflictTx(tx, inbound, 0)
+		if cErr != nil {
+			return cErr
+		}
+		if conflict != nil {
+			return common.NewError(conflict.String())
+		}
 		markDirty := false
 		if err := tx.Omit("ClientStats").Save(inbound).Error; err != nil {
 			return err
+		}
+		// The relay port is derived from the id, only known after Save; checkPortConflictTx
+		// ran the reverse-direction check above with ignoreId==0, so it couldn't yet.
+		if inbound.Protocol == model.AmneziaWG {
+			if amneziawgnet.SOCKSPortForInbound(inbound.Id) > 65535 {
+				return common.NewErrorf("amneziawg: inbound id %d exceeds the relay port window (ids above %d are not supported)",
+					inbound.Id, 65535-amneziawgnet.SOCKSBasePort)
+			}
+			conflict, cErr := checkAmneziawgnetSocksReverseConflict(tx, inbound.Id)
+			if cErr != nil {
+				return cErr
+			}
+			if conflict != nil {
+				return common.NewError(conflict.String())
+			}
 		}
 		// Emails seeded here (import's ClientStats, e.g. the controller's forced
 		// Enable=true on every imported stat row) are authoritative for this call
@@ -1058,6 +1249,9 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 			return err
 		}
 		if _, err := database.CreateHostsFromExternalProxy(tx, inbound.Id, inbound.StreamSettings); err != nil {
+			return err
+		}
+		if err := database.CreateHostFromMtprotoCustomShareAddr(tx, inbound.Id, legacyShareAddr); err != nil {
 			return err
 		}
 		if inbound.NodeID != nil {
@@ -1177,6 +1371,22 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 		if err := tx.Where("inbound_id = ?", id).Delete(&model.Host{}).Error; err != nil {
 			return err
 		}
+		// Drop the deleted inbound from any sub-balancer that selects it; a
+		// dangling id would emit a member no subscriber can resolve (#5648).
+		var balancers []model.SubBalancer
+		if err := tx.Find(&balancers).Error; err != nil {
+			return err
+		}
+		for i := range balancers {
+			before := balancers[i].InboundIds
+			balancers[i].InboundIds = slices.DeleteFunc(before, func(b int) bool { return b == id })
+			if len(balancers[i].InboundIds) == len(before) {
+				continue
+			}
+			if err := tx.Save(&balancers[i]).Error; err != nil {
+				return err
+			}
+		}
 		if loadErr == nil && ib.NodeID != nil {
 			return (&NodeService{}).MarkNodeDirtyTx(tx, *ib.NodeID)
 		}
@@ -1265,6 +1475,54 @@ func (s *InboundService) GetInboundDetail(id int) (*model.Inbound, error) {
 	return inbound, nil
 }
 
+// SetInboundSubSortIndex changes only the subscription sort order, so a
+// reorder cannot carry a stale settings/client payload over another edit.
+func (s *InboundService) SetInboundSubSortIndex(id int, index int) error {
+	index = normalizeSubSortIndex(index)
+	inbound, err := s.GetInbound(id)
+	if err != nil {
+		return err
+	}
+	if inbound.SubSortIndex == index {
+		return nil
+	}
+
+	db := database.GetDB()
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(model.Inbound{}).Where("id = ?", id).
+			Update("sub_sort_index", index).Error; err != nil {
+			return err
+		}
+		if inbound.NodeID != nil {
+			return (&NodeService{}).MarkNodeDirtyTx(tx, *inbound.NodeID)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	inbound.SubSortIndex = index
+
+	if inbound.NodeID == nil {
+		return nil
+	}
+	rt, push, _, perr := s.nodePushPlan(inbound)
+	if perr != nil {
+		return perr
+	}
+	if push {
+		narrow, ok := rt.(interface {
+			SetInboundSubSortIndex(context.Context, *model.Inbound, int) error
+		})
+		if !ok {
+			return fmt.Errorf("runtime %s does not support narrow subscription ordering updates", rt.Name())
+		}
+		if err := narrow.SetInboundSubSortIndex(context.Background(), inbound, index); err != nil {
+			logger.Warning("SetInboundSubSortIndex: remote metadata update on", rt.Name(), "failed:", err)
+		}
+	}
+	return nil
+}
+
 func (s *InboundService) SetInboundEnable(id int, enable bool) (bool, error) {
 	inbound, err := s.GetInbound(id)
 	if err != nil {
@@ -1339,6 +1597,7 @@ func (s *InboundService) SetInboundEnable(id int, enable bool) (bool, error) {
 }
 
 func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, bool, error) {
+	legacyShareAddr := legacyMtprotoShareAddr(inbound)
 	inbound.TrafficResetDay = normalizeTrafficResetDay(inbound.TrafficResetDay)
 	// Normalize streamSettings based on protocol
 	s.normalizeStreamSettings(inbound)
@@ -1349,22 +1608,43 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		return inbound, false, err
 	}
 	s.normalizeMtprotoSecret(inbound)
-	inbound.SubSortIndex = normalizeSubSortIndex(inbound.SubSortIndex)
 
 	oldInbound, err := s.GetInbound(inbound.Id)
 	if err != nil {
 		return inbound, false, err
 	}
-	// Restore the stored NodeID before the port-conflict check so a node inbound
-	// stays scoped to its own node (the payload's nodeId is unreliable, often absent).
-	inbound.NodeID = oldInbound.NodeID
+	if err := s.normalizeAmneziaWGSettings(inbound, oldInbound.Settings); err != nil {
+		return inbound, false, err
+	}
+	inbound.SubSortIndex = normalizeSubSortIndex(inbound.SubSortIndex)
 
-	conflict, err := s.checkPortConflict(inbound, inbound.Id)
+	clients, err := s.GetClients(inbound)
 	if err != nil {
 		return inbound, false, err
 	}
-	if conflict != nil {
-		return inbound, false, common.NewError(conflict.String())
+	if inbound.Protocol == model.Hysteria {
+		for _, client := range clients {
+			if client.Auth == "" {
+				return inbound, false, common.NewError("empty client ID")
+			}
+		}
+	}
+	// Grandfather a row that was already stored incomplete so it stays editable;
+	// only a save that breaks a previously valid TLS block is refused.
+	if !s.FromNodeSync {
+		if err := validateInboundTLSCertificates(inbound.StreamSettings); err != nil {
+			if validateInboundTLSCertificates(oldInbound.StreamSettings) == nil {
+				return inbound, false, err
+			}
+		}
+	}
+	// Restore the stored NodeID before the port-conflict check so a node inbound
+	// stays scoped to its own node (the payload's nodeId is unreliable, often absent).
+	inbound.NodeID = oldInbound.NodeID
+	// The node assignment is the stored one, so only a protocol change can
+	// introduce one; a row adopted from a node keeps the protocol it arrived with.
+	if inbound.NodeID != nil && inbound.Protocol != oldInbound.Protocol && !isNodeEligibleProtocol(inbound.Protocol) {
+		return inbound, false, common.NewErrorf("%s inbounds cannot be assigned to a node", inbound.Protocol)
 	}
 
 	// Capture the pre-edit protocol and routing state before oldInbound is
@@ -1384,6 +1664,13 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	var postCommitApply func()
 
 	txErr := runSerializedTx(func(tx *gorm.DB) error {
+		conflict, cErr := checkPortConflictTx(tx, inbound, inbound.Id)
+		if cErr != nil {
+			return cErr
+		}
+		if conflict != nil {
+			return common.NewError(conflict.String())
+		}
 		if err := s.updateClientTraffics(tx, oldInbound, inbound); err != nil {
 			return err
 		}
@@ -1459,8 +1746,14 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		// VLESS inbound just became flow-eligible (e.g. vlessenc was enabled on an
 		// XHTTP inbound), restore Vision for clients whose intended flow is Vision
 		// but was stripped while the inbound was ineligible.
-		if restored, changed := s.restoreVisionFlowForEligibleInbound(tx, inbound.Settings, inbound.StreamSettings, inbound.Protocol); changed {
-			inbound.Settings = restored
+		if !inbound.DisableFlow {
+			if restored, changed := s.restoreVisionFlowForEligibleInbound(tx, inbound.Settings, inbound.StreamSettings, inbound.Protocol); changed {
+				inbound.Settings = restored
+			}
+		} else {
+			if stripped, changed := stripClientFlows(inbound.Settings); changed {
+				inbound.Settings = stripped
+			}
 		}
 
 		oldInbound.Total = inbound.Total
@@ -1473,6 +1766,7 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		oldInbound.Listen = inbound.Listen
 		oldInbound.Port = inbound.Port
 		oldInbound.Protocol = inbound.Protocol
+		oldInbound.DisableFlow = inbound.DisableFlow
 		oldInbound.Settings = inbound.Settings
 		oldInbound.StreamSettings = inbound.StreamSettings
 		oldInbound.Sniffing = inbound.Sniffing
@@ -1486,6 +1780,9 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 			}
 			oldInbound.ShareAddrStrategy = inbound.ShareAddrStrategy
 			oldInbound.ShareAddr = inbound.ShareAddr
+			if err := database.CreateHostFromMtprotoCustomShareAddr(tx, inbound.Id, legacyShareAddr); err != nil {
+				return err
+			}
 		}
 		if oldTagWasAuto && inbound.Tag == tag {
 			inbound.Tag = ""

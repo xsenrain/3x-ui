@@ -22,24 +22,10 @@ import (
 type OutboundService struct{}
 
 func (s *OutboundService) AddTraffic(traffics []*xray.Traffic, clientTraffics []*xray.ClientTraffic) (error, bool) {
-	var err error
-	db := database.GetDB()
-	tx := db.Begin()
-
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-
-	err = s.addOutboundTraffic(tx, traffics)
-	if err != nil {
-		return err, false
-	}
-
-	return nil, false
+	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+		return s.addOutboundTraffic(tx, traffics)
+	})
+	return err, false
 }
 
 // saturatingAdd caps counters at database.TrafficMax: unlike the SQL paths,
@@ -235,7 +221,7 @@ func probeTCPEndpoint(endpoint string, timeout time.Duration) TestEndpointResult
 // dial neither proves reachability nor measures latency. Such outbounds
 // must go through the real xray handshake probe instead.
 func outboundTransportIsUDP(ob map[string]any) bool {
-	if protocol, _ := ob["protocol"].(string); protocol == "hysteria" || protocol == "wireguard" {
+	if protocol, _ := ob["protocol"].(string); protocol == "hysteria" || protocol == "wireguard" || protocol == "amneziawg" {
 		return true
 	}
 	if stream, ok := ob["streamSettings"].(map[string]any); ok {
@@ -271,7 +257,16 @@ func extractOutboundEndpoints(ob map[string]any) []string {
 			}
 		}
 	case "vless":
-		addServer(settings["address"], settings["port"])
+		if vnext, ok := settings["vnext"].([]any); ok {
+			for _, v := range vnext {
+				if vm, ok := v.(map[string]any); ok {
+					addServer(vm["address"], vm["port"])
+				}
+			}
+		}
+		if len(out) == 0 {
+			addServer(settings["address"], settings["port"])
+		}
 	case "hysteria":
 		addServer(settings["address"], settings["port"])
 	case "trojan", "shadowsocks", "http", "socks":

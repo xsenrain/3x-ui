@@ -9,12 +9,17 @@ export class AllSetting {
   webBasePath = '/';
   sessionMaxAge = 360;
   trustedProxyCIDRs = '127.0.0.1/32,::1/128';
+  ipLimitAllowlist = '';
   panelOutbound = '';
   pageSize = 25;
   expireDiff = 0;
   trafficDiff = 0;
   remarkTemplate = '{{INBOUND}}-{{EMAIL}}|📊{{TRAFFIC_LEFT}}|⏳{{DAYS_LEFT}}D';
   subShowIdentityOnAllLinks = false;
+  subInfoNodeEnable = false;
+  subExpiredTemplate = '⛔ {{EMAIL}} | Expired: {{EXPIRE_DATE}}';
+  subTrafficDepletedTemplate =
+    '🚫 {{EMAIL}} | Traffic Depleted | {{TRAFFIC_USED}}/{{TRAFFIC_TOTAL}}';
   datepicker: 'gregorian' | 'jalalian' = 'gregorian';
   tgBotEnable = false;
   tgBotToken = '';
@@ -64,9 +69,34 @@ export class AllSetting {
   subClashRules = '';
   subJsonMux = '';
   subJsonRules = '';
+  subJsonRoutingRules = '';
   subJsonFinalMask = '';
+  subJsonObservatory = '';
   subThemeDir = '';
   subHideSettings = false;
+  subHappAutoDetect = false;
+  subHappProviderId = '';
+  subHappNewUrl = '';
+  subHappFallbackUrl = '';
+  subHappSubInfoColor = 'blue';
+  subHappSubInfoText = '';
+  subHappSubInfoButtonText = '';
+  subHappSubInfoButtonLink = '';
+  subHappSubExpire = false;
+  subHappSubExpireButtonLink = '';
+  subHappNotificationExpire = false;
+  subHappNoLimit = false;
+  subHappAlwaysHwid = false;
+  subHappTunMode = '';
+  subHappTunType = '';
+  subHappExcludeRoutes = '';
+  subHappExcludeApns = false;
+  subHappColorProfile = '';
+  subHappPingType = '';
+  subHappAutoConnect = false;
+  subHappAutoConnectType = 'lowestdelay';
+  subHappPerAppMode = 'off';
+  subHappPerAppList = '';
 
   timeLocation = 'Local';
 
@@ -123,7 +153,9 @@ export class AllSetting {
     const cpu = Math.round(Number(this.tgCpu));
     this.tgCpu = Number.isFinite(cpu) ? Math.min(100, Math.max(0, cpu)) : 80;
     const threshold = Math.round(Number(this.outboundDownThreshold));
-    this.outboundDownThreshold = Number.isFinite(threshold) ? Math.min(100, Math.max(1, threshold)) : 3;
+    this.outboundDownThreshold = Number.isFinite(threshold)
+      ? Math.min(100, Math.max(1, threshold))
+      : 3;
   }
 
   equals(other: AllSetting): boolean {

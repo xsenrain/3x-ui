@@ -163,10 +163,10 @@ func parseVmess(link string) (*ParseResult, error) {
 	case "grpc":
 		svc := getString(j, "path", "")
 		if auth, ok := j["authority"].(string); ok && auth != "" {
-			(stream["grpcSettings"].(map[string]any))["authority"] = auth
+			stream["grpcSettings"].(map[string]any)["authority"] = auth
 		}
-		(stream["grpcSettings"].(map[string]any))["serviceName"] = svc
-		(stream["grpcSettings"].(map[string]any))["multiMode"] = getString(j, "type", "") == "multi"
+		stream["grpcSettings"].(map[string]any)["serviceName"] = svc
+		stream["grpcSettings"].(map[string]any)["multiMode"] = getString(j, "type", "") == "multi"
 	case "httpupgrade":
 		setHTTPUpgrade(stream, getString(j, "host", ""), getString(j, "path", "/"))
 	case "xhttp":
@@ -457,6 +457,8 @@ func parseHysteria2(link string) (*ParseResult, error) {
 		},
 	}
 	applyFinalMask(stream, params)
+	applyHysteria2Obfs(stream, params)
+	applyHysteria2Hop(stream, params)
 
 	identity := "hysteria2:" + auth + "@" + host + ":" + strconv.Itoa(port) + "?" + canonicalQuery(params)
 
@@ -684,6 +686,113 @@ func applyFinalMask(stream map[string]any, p url.Values) {
 			stream["finalmask"] = parsed
 		}
 	}
+}
+
+// gecko packetSize bounds mirror xray-core's salamander buffer cap.
+const (
+	geckoMinPacketSize = 1
+	geckoMaxPacketSize = 2048
+)
+
+// parsePacketSizeRange validates a min/max pair for the Gecko obfs marker.
+func parsePacketSizeRange(minStr, maxStr string) (int, int, bool) {
+	minVal, err1 := strconv.Atoi(minStr)
+	maxVal, err2 := strconv.Atoi(maxStr)
+	if err1 != nil || err2 != nil ||
+		minVal < geckoMinPacketSize || maxVal < minVal || maxVal > geckoMaxPacketSize {
+		return 0, 0, false
+	}
+	return minVal, maxVal, true
+}
+
+// applyHysteria2Obfs rebuilds the salamander mask from the standard Hysteria2
+// obfs pair. An fm=-carried password wins; gecko adds the packetSize pair.
+func applyHysteria2Obfs(stream map[string]any, p url.Values) {
+	obfs := p.Get("obfs")
+	isGecko := strings.EqualFold(obfs, "gecko")
+	if !isGecko && !strings.EqualFold(obfs, "salamander") {
+		return
+	}
+	password := firstParam(p, "obfs-password", "obfs_password", "obfsPassword")
+	if password == "" {
+		return
+	}
+	packetSize := ""
+	if isGecko {
+		// Both halves required with digit+range validation, matching the
+		// export side; half-specified or non-numeric values are dropped.
+		minSize := strings.TrimSpace(p.Get("minPacketSize"))
+		maxSize := strings.TrimSpace(p.Get("maxPacketSize"))
+		if min, max, ok := parsePacketSizeRange(minSize, maxSize); ok {
+			packetSize = fmt.Sprintf("%d-%d", min, max)
+		}
+	}
+	finalmask := ensureChildMap(stream, "finalmask")
+	udp, _ := finalmask["udp"].([]any)
+	for _, m := range udp {
+		mask, ok := m.(map[string]any)
+		if !ok || mask["type"] != "salamander" {
+			continue
+		}
+		settings, ok := mask["settings"].(map[string]any)
+		if !ok {
+			settings = map[string]any{}
+			mask["settings"] = settings
+		}
+		if pw, _ := settings["password"].(string); pw == "" {
+			settings["password"] = password
+		}
+		if packetSize != "" {
+			if ps, _ := settings["packetSize"].(string); ps == "" {
+				settings["packetSize"] = packetSize
+			}
+		}
+		return
+	}
+	settings := map[string]any{"password": password}
+	if packetSize != "" {
+		settings["packetSize"] = packetSize
+	}
+	finalmask["udp"] = append(udp, map[string]any{
+		"type":     "salamander",
+		"settings": settings,
+	})
+}
+
+// applyHysteria2Hop rebuilds the UDP port-hopping range from the standard mport
+// param. xray-core 26.9.9 replaced finalmask.quicParams.udpHop with a "udphop"
+// UDP mask, whose intervalremote mode is what the old key used to do; a mask
+// already supplied via fm= wins.
+func applyHysteria2Hop(stream map[string]any, p url.Values) {
+	ports := firstParam(p, "mport")
+	if ports == "" {
+		return
+	}
+	finalmask := ensureChildMap(stream, "finalmask")
+	masks, _ := finalmask["udp"].([]any)
+	for _, rawMask := range masks {
+		mask, _ := rawMask.(map[string]any)
+		if maskType, _ := mask["type"].(string); maskType == "udphop" {
+			return
+		}
+	}
+	finalmask["udp"] = append(masks, map[string]any{
+		"type": "udphop",
+		"settings": map[string]any{
+			"mode":        "intervalremote",
+			"interval":    "5-10",
+			"remotePorts": ports,
+		},
+	})
+}
+
+func ensureChildMap(parent map[string]any, key string) map[string]any {
+	m, ok := parent[key].(map[string]any)
+	if !ok {
+		m = map[string]any{}
+		parent[key] = m
+	}
+	return m
 }
 
 // sanitizeFinalMaskQuicParams coerces the strictly numeric quicParams fields

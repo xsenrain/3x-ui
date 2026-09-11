@@ -34,11 +34,13 @@ import (
 var xrayTemplateConfig string
 
 const (
-	DefaultSubClashUserAgentRegex = `(?i)(clash|mihomo)`
-	DefaultSubJsonUserAgentRegex  = ``
-	DefaultRemarkTemplate         = "{{INBOUND}}-{{EMAIL}}|📊{{TRAFFIC_LEFT}}|⏳{{DAYS_LEFT}}D"
-	DefaultTrustedProxyCIDRs      = "127.0.0.1/32,::1/128"
-	maxRegexLength                = 2048
+	DefaultSubClashUserAgentRegex     = `(?i)(clash|mihomo)`
+	DefaultSubJsonUserAgentRegex      = ``
+	DefaultRemarkTemplate             = "{{INBOUND}}-{{EMAIL}}|📊{{TRAFFIC_LEFT}}|⏳{{DAYS_LEFT}}D"
+	DefaultSubExpiredTemplate         = "⛔ {{EMAIL}} | Expired: {{EXPIRE_DATE}}"
+	DefaultSubTrafficDepletedTemplate = "🚫 {{EMAIL}} | Traffic Depleted | {{TRAFFIC_USED}}/{{TRAFFIC_TOTAL}}"
+	DefaultTrustedProxyCIDRs          = "127.0.0.1/32,::1/128"
+	maxRegexLength                    = 2048
 )
 
 var defaultValueMap = map[string]string{
@@ -59,15 +61,20 @@ var defaultValueMap = map[string]string{
 	"nodeMtlsCaKeyPem":            "",
 	"nodeMtlsClientCertPem":       "",
 	"nodeMtlsClientKeyPem":        "",
+	"nodeMtlsClientCertSha256":    "",
 	"nodeMtlsClientCAPem":         "",
 	"webBasePath":                 normalizeBasePath(getEnv("XUI_INIT_WEB_BASE_PATH", "/")),
 	"sessionMaxAge":               "360",
 	"trustedProxyCIDRs":           DefaultTrustedProxyCIDRs,
+	"ipLimitAllowlist":            "",
 	"pageSize":                    "25",
 	"expireDiff":                  "0",
 	"trafficDiff":                 "0",
 	"remarkTemplate":              DefaultRemarkTemplate,
 	"subShowIdentityOnAllLinks":   "false",
+	"subInfoNodeEnable":           "false",
+	"subExpiredTemplate":          DefaultSubExpiredTemplate,
+	"subTrafficDepletedTemplate":  DefaultSubTrafficDepletedTemplate,
 	"timeLocation":                "Local",
 	"tgBotEnable":                 "false",
 	"tgBotToken":                  "",
@@ -95,6 +102,29 @@ var defaultValueMap = map[string]string{
 	"subEnableRouting":            "false",
 	"subRoutingRules":             "",
 	"subHideSettings":             "false",
+	"subHappAutoDetect":           "false",
+	"subHappProviderId":           "",
+	"subHappNewUrl":               "",
+	"subHappFallbackUrl":          "",
+	"subHappSubInfoColor":         "blue",
+	"subHappSubInfoText":          "",
+	"subHappSubInfoButtonText":    "",
+	"subHappSubInfoButtonLink":    "",
+	"subHappSubExpire":            "false",
+	"subHappSubExpireButtonLink":  "",
+	"subHappNotificationExpire":   "false",
+	"subHappNoLimit":              "false",
+	"subHappAlwaysHwid":           "false",
+	"subHappTunMode":              "",
+	"subHappTunType":              "",
+	"subHappExcludeRoutes":        "",
+	"subHappExcludeApns":          "false",
+	"subHappColorProfile":         "",
+	"subHappPingType":             "",
+	"subHappAutoConnect":          "false",
+	"subHappAutoConnectType":      "lowestdelay",
+	"subHappPerAppMode":           "off",
+	"subHappPerAppList":           "",
 	"subIncyEnableRouting":        "false",
 	"subIncyRoutingRules":         "",
 	"subListen":                   "",
@@ -115,12 +145,15 @@ var defaultValueMap = map[string]string{
 	"subClashRules":               "",
 	"subJsonMux":                  "",
 	"subJsonRules":                "",
+	"subJsonRoutingRules":         "",
 	"subJsonFinalMask":            "",
+	"subJsonObservatory":          "",
 	"subThemeDir":                 "",
 	"datepicker":                  "gregorian",
 	"warp":                        "",
 	"warpUpdateInterval":          "0",
 	"nord":                        "",
+	"pia":                         "",
 	"externalTrafficInformEnable": "false",
 	"externalTrafficInformURI":    "",
 	"restartXrayOnClientDisable":  "true",
@@ -175,15 +208,6 @@ var defaultValueMap = map[string]string{
 // SettingService provides business logic for application settings management.
 // It handles configuration storage, retrieval, and validation for all system settings.
 type SettingService struct{}
-
-func (s *SettingService) GetDefaultJSONConfig() (any, error) {
-	var jsonData any
-	err := json.Unmarshal([]byte(xrayTemplateConfig), &jsonData)
-	if err != nil {
-		return nil, err
-	}
-	return jsonData, nil
-}
 
 func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {
 	db := database.GetDB()
@@ -305,12 +329,17 @@ func getEnv(key, fallback string) string {
 
 func (s *SettingService) ResetSettings() error {
 	db := database.GetDB()
-	err := db.Where("1 = 1").Delete(model.Setting{}).Error
-	if err != nil {
-		return err
-	}
-	return db.Model(model.User{}).
-		Where("1 = 1").Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("1 = 1").Delete(model.Setting{}).Error; err != nil {
+			return err
+		}
+		paths := []model.Setting{
+			{Key: "subPath", Value: "/" + random.NumLower(16) + "/"},
+			{Key: "subJsonPath", Value: "/" + random.NumLower(16) + "/"},
+			{Key: "subClashPath", Value: "/" + random.NumLower(16) + "/"},
+		}
+		return tx.Create(&paths).Error
+	})
 }
 
 func (s *SettingService) getSetting(key string) (*model.Setting, error) {
@@ -391,11 +420,17 @@ func (s *SettingService) setInt(key string, value int) error {
 }
 
 func (s *SettingService) GetWarpLastUpdate() (int64, error) {
-	val, err := s.getString("warpLastUpdate")
-	if err != nil || val == "" {
+	setting, err := s.getSetting("warpLastUpdate")
+	if database.IsNotFound(err) {
+		return 0, nil
+	}
+	if err != nil {
 		return 0, err
 	}
-	return strconv.ParseInt(val, 10, 64)
+	if setting.Value == "" {
+		return 0, nil
+	}
+	return strconv.ParseInt(setting.Value, 10, 64)
 }
 
 func (s *SettingService) SetWarpLastUpdate(val int64) error {
@@ -643,6 +678,12 @@ func (s *SettingService) GetSessionMaxAge() (int, error) {
 	return s.getInt("sessionMaxAge")
 }
 
+// GetIpLimitAllowlist returns the operator's trusted addresses and networks,
+// which the IP limit neither counts nor bans.
+func (s *SettingService) GetIpLimitAllowlist() (string, error) {
+	return s.getString("ipLimitAllowlist")
+}
+
 func (s *SettingService) GetTrustedProxyCIDRs() (string, error) {
 	return s.getString("trustedProxyCIDRs")
 }
@@ -655,12 +696,27 @@ func (s *SettingService) GetSubShowIdentityOnAllLinks() (bool, error) {
 	return s.getBool("subShowIdentityOnAllLinks")
 }
 
+func (s *SettingService) GetSubInfoNodeEnable() (bool, error) {
+	return s.getBool("subInfoNodeEnable")
+}
+
+func (s *SettingService) GetSubExpiredTemplate() (string, error) {
+	return s.getString("subExpiredTemplate")
+}
+
+func (s *SettingService) GetSubTrafficDepletedTemplate() (string, error) {
+	return s.getString("subTrafficDepletedTemplate")
+}
+
 func (s *SettingService) GetSecret() ([]byte, error) {
 	secret, err := s.getString("secret")
-	if secret == defaultValueMap["secret"] {
-		err := s.saveSetting("secret", secret)
-		if err != nil {
-			logger.Warning("save secret failed:", err)
+	if secret == "" || secret == defaultValueMap["secret"] {
+		if secret == "" {
+			secret = defaultValueMap["secret"]
+		}
+		saveErr := s.saveSetting("secret", secret)
+		if saveErr != nil {
+			logger.Warning("save secret failed:", saveErr)
 		}
 	}
 	return []byte(secret), err
@@ -779,6 +835,98 @@ func (s *SettingService) GetSubHideSettings() (bool, error) {
 	return s.getBool("subHideSettings")
 }
 
+func (s *SettingService) GetSubHappAutoDetect() (bool, error) {
+	return s.getBool("subHappAutoDetect")
+}
+
+func (s *SettingService) GetSubHappProviderId() (string, error) {
+	return s.getString("subHappProviderId")
+}
+
+func (s *SettingService) GetSubHappNewUrl() (string, error) {
+	return s.getString("subHappNewUrl")
+}
+
+func (s *SettingService) GetSubHappFallbackUrl() (string, error) {
+	return s.getString("subHappFallbackUrl")
+}
+
+func (s *SettingService) GetSubHappSubInfoColor() (string, error) {
+	return s.getString("subHappSubInfoColor")
+}
+
+func (s *SettingService) GetSubHappSubInfoText() (string, error) {
+	return s.getString("subHappSubInfoText")
+}
+
+func (s *SettingService) GetSubHappSubInfoButtonText() (string, error) {
+	return s.getString("subHappSubInfoButtonText")
+}
+
+func (s *SettingService) GetSubHappSubInfoButtonLink() (string, error) {
+	return s.getString("subHappSubInfoButtonLink")
+}
+
+func (s *SettingService) GetSubHappSubExpire() (bool, error) {
+	return s.getBool("subHappSubExpire")
+}
+
+func (s *SettingService) GetSubHappSubExpireButtonLink() (string, error) {
+	return s.getString("subHappSubExpireButtonLink")
+}
+
+func (s *SettingService) GetSubHappNotificationExpire() (bool, error) {
+	return s.getBool("subHappNotificationExpire")
+}
+
+func (s *SettingService) GetSubHappNoLimit() (bool, error) {
+	return s.getBool("subHappNoLimit")
+}
+
+func (s *SettingService) GetSubHappAlwaysHwid() (bool, error) {
+	return s.getBool("subHappAlwaysHwid")
+}
+
+func (s *SettingService) GetSubHappTunMode() (string, error) {
+	return s.getString("subHappTunMode")
+}
+
+func (s *SettingService) GetSubHappTunType() (string, error) {
+	return s.getString("subHappTunType")
+}
+
+func (s *SettingService) GetSubHappExcludeRoutes() (string, error) {
+	return s.getString("subHappExcludeRoutes")
+}
+
+func (s *SettingService) GetSubHappExcludeApns() (bool, error) {
+	return s.getBool("subHappExcludeApns")
+}
+
+func (s *SettingService) GetSubHappColorProfile() (string, error) {
+	return s.getString("subHappColorProfile")
+}
+
+func (s *SettingService) GetSubHappPingType() (string, error) {
+	return s.getString("subHappPingType")
+}
+
+func (s *SettingService) GetSubHappAutoConnect() (bool, error) {
+	return s.getBool("subHappAutoConnect")
+}
+
+func (s *SettingService) GetSubHappAutoConnectType() (string, error) {
+	return s.getString("subHappAutoConnectType")
+}
+
+func (s *SettingService) GetSubHappPerAppMode() (string, error) {
+	return s.getString("subHappPerAppMode")
+}
+
+func (s *SettingService) GetSubHappPerAppList() (string, error) {
+	return s.getString("subHappPerAppList")
+}
+
 func (s *SettingService) GetSubIncyEnableRouting() (bool, error) {
 	return s.getBool("subIncyEnableRouting")
 }
@@ -871,8 +1019,16 @@ func (s *SettingService) GetSubJsonRules() (string, error) {
 	return s.getString("subJsonRules")
 }
 
+func (s *SettingService) GetSubJsonRoutingRules() (string, error) {
+	return s.getString("subJsonRoutingRules")
+}
+
 func (s *SettingService) GetSubJsonFinalMask() (string, error) {
 	return s.getString("subJsonFinalMask")
+}
+
+func (s *SettingService) GetSubJsonObservatory() (string, error) {
+	return s.getString("subJsonObservatory")
 }
 
 func (s *SettingService) GetSubThemeDir() (string, error) {
@@ -897,6 +1053,14 @@ func (s *SettingService) GetNord() (string, error) {
 
 func (s *SettingService) SetNord(data string) error {
 	return s.setString("nord", data)
+}
+
+func (s *SettingService) GetPia() (string, error) {
+	return s.getString("pia")
+}
+
+func (s *SettingService) SetPia(data string) error {
+	return s.setString("pia", data)
 }
 
 func (s *SettingService) GetExternalTrafficInformEnable() (bool, error) {
@@ -1310,6 +1474,37 @@ func validateSettingsURLs(allSetting *entity.AllSetting) error {
 	// the scheme instead of forcing SanitizeHTTPURL's http(s)-only rule.
 	allSetting.SubSupportUrl = common.EnsureURLScheme(allSetting.SubSupportUrl)
 	allSetting.SubProfileUrl = common.EnsureURLScheme(allSetting.SubProfileUrl)
+	for _, ptr := range []*string{
+		&allSetting.SubHappNewUrl,
+		&allSetting.SubHappFallbackUrl,
+		&allSetting.SubHappSubInfoButtonLink,
+		&allSetting.SubHappSubExpireButtonLink,
+	} {
+		if strings.TrimSpace(*ptr) != "" {
+			*ptr = common.EnsureURLScheme(strings.TrimSpace(*ptr))
+		}
+	}
+	for name, value := range map[string]*string{
+		"Happ routing source":              &allSetting.SubRoutingRules,
+		"Clash/Mihomo routing source":      &allSetting.SubClashRules,
+		"Incy routing source":              &allSetting.SubIncyRoutingRules,
+		"JSON subscription routing source": &allSetting.SubJsonRoutingRules,
+	} {
+		if err := validateRemoteRoutingURLSetting(name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRemoteRoutingURLSetting(name string, value *string) error {
+	canonical, remote, err := common.ParseRemoteRoutingURL(*value)
+	if err != nil {
+		return common.NewError(name, err.Error())
+	}
+	if remote {
+		*value = canonical
+	}
 	return nil
 }
 
