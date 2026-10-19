@@ -11,6 +11,7 @@ import {
   CloudServerOutlined,
   ClusterOutlined,
   CodeOutlined,
+  CrownOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   DiscordOutlined,
@@ -68,6 +69,7 @@ type IconName =
   | 'cluster'
   | 'hosts'
   | 'logout'
+  | 'sponsors'
   | 'apidocs'
   | 'outbound'
   | 'routing';
@@ -82,6 +84,7 @@ const iconByName: Record<IconName, ComponentType> = {
   cluster: ClusterOutlined,
   hosts: GlobalOutlined,
   logout: LogoutOutlined,
+  sponsors: CrownOutlined,
   apidocs: ApiOutlined,
   outbound: ExportOutlined,
   routing: SwapOutlined,
@@ -232,6 +235,7 @@ export default function AppSidebar() {
       { key: '/settings', icon: 'setting', title: t('menu.settings') },
       { key: '/xray', icon: 'tool', title: t('menu.xray') },
       { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs') },
+      { key: '/sponsors', icon: 'sponsors', title: t('menu.sponsors') },
       { key: LOGOUT_KEY, icon: 'logout', title: t('logout') },
     ],
     [t],
